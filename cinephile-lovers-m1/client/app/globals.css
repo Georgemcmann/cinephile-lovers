@@ -1,0 +1,202 @@
+@import "tailwindcss";
+
+/*
+ * Brand tokens — brief §3.
+ * Names map to Tailwind utilities: bg-base, bg-panel, bg-elevated, bg-accent,
+ * bg-btn-red, text-ink, text-muted, text-soft, border-line.
+ *
+ * Contrast decisions (measured with a WCAG script — see docs/milestone-1.md):
+ * - White #f5f5f5 on accent #e32636 is 4.19:1 → FAILS AA for normal text.
+ *   The brand accent is reserved for non-text uses (progress, selected
+ *   states, active controls), where the 3:1 UI-component rule applies.
+ * - Buttons use --color-btn-red (#d42030): white label = 4.76:1, AA pass.
+ *   Hover deepens to --color-btn-red-deep (#c81e2b): 5.24:1, AA pass.
+ * - Small red-ish text on dark backgrounds uses --color-soft (#f04452):
+ *   5.36:1 on #090909, 4.91:1 on panel #151515 — AA pass on both.
+ * Owner decision (Option A), recorded 2026-11-09.
+ */
+@theme {
+  --color-base: #090909;
+  --color-panel: #151515;
+  --color-elevated: #202020;
+  --color-accent: #e32636;
+  --color-btn-red: #d42030;
+  --color-btn-red-deep: #c81e2b;
+  --color-soft: #f04452;
+  --color-ink: #f5f5f5;
+  --color-muted: #a3a3a3;
+  --color-line: #303030;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-base);
+  color: var(--color-ink);
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * ---- Persistent layer (brief §5) ----
+ * The <video> element is rendered ONCE here and must never unmount between
+ * Lobby and Watch Room. Phases only change the dock's size — never the
+ * element itself.
+ *
+ * Non-watch phases COLLAPSE the dock (height 0, clipped) instead of using
+ * display:none: display:none has historically paused hidden videos on iOS,
+ * and playback continuity across navigation is the whole point of this
+ * layer.
+ */
+.persistent-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.video-dock {
+  position: relative;
+  flex: none;
+  height: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+.video-dock video {
+  display: block;
+  width: 100%;
+  background: #000;
+}
+
+.video-dock[data-phase="lobby"][data-loaded="yes"] {
+  height: auto;
+}
+
+.video-dock[data-phase="lobby"][data-loaded="yes"] video {
+  height: 120px;
+  object-fit: cover;
+}
+
+.video-dock[data-phase="watch"] {
+  height: auto;
+}
+
+.video-dock[data-phase="watch"] video {
+  aspect-ratio: 16 / 9;
+}
+
+/* Idle hint over the empty 16:9 screen in the watch room. */
+.dock-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--color-muted);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+/*
+ * Tap-to-resume overlay — rendered when a play() call was rejected
+ * (autoplay policy). The whole surface is a real <button>: one tap is the
+ * user gesture that unlocks playback. Icon bubble uses --color-btn-red
+ * (white icon 4.76:1, AA pass); 64px touch target.
+ */
+.resume-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 0;
+  background: rgb(0 0 0 / 0.6);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  color: var(--color-ink);
+  cursor: pointer;
+}
+
+.resume-overlay__icon {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 9999px;
+  background: var(--color-btn-red);
+  /* optical centering for the play triangle */
+  padding-left: 4px;
+}
+
+.resume-overlay__label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Milestone test scaffolding: the persistent element's DOM identity chip
+   (used to verify the M2 gate on a real iPhone). Removed at M6 polish. */
+.node-badge {
+  display: inline-block;
+  width: fit-content;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-muted);
+  background-color: var(--color-elevated);
+  border: 1px solid var(--color-line);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+/* ---- Player controls ---- */
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  color: var(--color-ink);
+  background: var(--color-elevated);
+  transition: background-color 150ms ease;
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--color-line);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+}
+
+.icon-btn--primary {
+  background: var(--color-btn-red); /* white icon 4.76:1 — AA pass */
+}
+
+.icon-btn--primary:hover:not(:disabled) {
+  background: var(--color-btn-red-deep);
+}
+
+/* Brand accent for the seek bar: non-text UI, 3:1 rule applies
+   (#e32636 on #151515 panel clears it comfortably). */
+.seek-range {
+  accent-color: var(--color-accent);
+  height: 44px;
+}
