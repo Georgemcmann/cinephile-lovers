@@ -16,10 +16,18 @@ import { allowedOrigins } from "../origins.js";
  * - nothing sensitive is logged: no handshake auth, no tokens, no URLs
  */
 export function attachGateway(httpServer: HttpServer, env: Env) {
+  const origins = new Set(allowedOrigins(env));
   const io = new SocketIoServer(httpServer, {
     cors: {
-      origin: allowedOrigins(env),
+      origin: [...origins],
       methods: ["GET", "POST"],
+    },
+    // CORS headers only protect HTTP polling. WebSocket upgrades are not
+    // subject to CORS in browsers, so the Origin header must be checked here
+    // for every handshake (polling and websocket alike).
+    allowRequest: (req, callback) => {
+      const origin = req.headers.origin;
+      callback(null, typeof origin === "string" && origins.has(origin));
     },
     maxHttpBufferSize: 100_000, // 100 KB — planned events never approach this
     serveClient: false,

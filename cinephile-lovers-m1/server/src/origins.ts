@@ -5,13 +5,31 @@ import type { Env } from "./config.js";
  * localhost during development only. Vercel preview URLs are deliberately
  * NOT allowed (owner decision #10) — test preview builds on a stable alias
  * that is explicitly added to FRONTEND_URL, or against production.
+ *
+ * M3 addition: DEV_EXTRA_ORIGINS (development only) lets a real device on
+ * the LAN (an iPhone cannot present a localhost origin) call the dev
+ * server. Entries are validated strictly and the default is empty, so the
+ * default allowlist is exactly what review R5 specifies.
  */
 export function allowedOrigins(env: Env): string[] {
-  const origins = [env.FRONTEND_URL];
+  const origins = new Set([env.FRONTEND_URL]);
   if (env.NODE_ENV === "development") {
-    origins.push("http://localhost:3000", "http://127.0.0.1:3000");
+    origins.add("http://localhost:3000");
+    origins.add("http://127.0.0.1:3000");
+    for (const raw of env.DEV_EXTRA_ORIGINS.split(",")) {
+      const candidate = raw.trim();
+      if (!candidate) continue;
+      // Fail fast at boot on malformed entries — this is a security list.
+      const url = new URL(candidate);
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        throw new Error(
+          `DEV_EXTRA_ORIGINS entry must be an http(s) origin: "${candidate}"`,
+        );
+      }
+      origins.add(url.origin);
+    }
   }
-  return origins;
+  return [...origins];
 }
 
 /**
@@ -32,9 +50,11 @@ export function originMiddleware(env: Env) {
     const origin = req.headers.origin;
     const isAllowed = origin !== undefined && allowed.has(origin);
 
+    // Responses vary by Origin even when the origin is refused.
+    res.setHeader("Vary", "Origin");
+
     if (isAllowed && origin) {
       res.setHeader("Access-Control-Allow-Origin", origin);
-      res.setHeader("Vary", "Origin");
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
       res.setHeader("Access-Control-Allow-Headers", "Content-Type");
       res.setHeader("Access-Control-Max-Age", "600");

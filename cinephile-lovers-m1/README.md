@@ -6,7 +6,7 @@ Private, two-person watch-together web app. Each person plays their **own local 
 
 ## Status
 
-Milestone 1 — Foundation. Scope, file responsibilities and the full verification checklist live in [`docs/milestone-1.md`](docs/milestone-1.md).
+Milestone 2 — Local Video Player (in progress). The M1 foundation and its persistent-layer gate are complete; the M2 real-iPhone gate is still outstanding. Scope and the remaining checklist live in [`docs/milestone-2.md`](docs/milestone-2.md). The M1 record is in [`docs/milestone-1.md`](docs/milestone-1.md).
 
 ## Stack
 
@@ -45,12 +45,12 @@ npm run dev          # http://localhost:3000
 
 ## Verification
 
-Follow `docs/milestone-1.md` — it lists every command, the expected result, and the persistent-layer spike (the M1 gate).
+Follow `docs/milestone-1.md` for the foundation record and `docs/milestone-2.md` for the local-player checks and the outstanding real-device gate.
 
 ## Security posture (summary)
 
 - Invite secrets travel in URL fragments; session tokens will travel in the Socket.IO handshake auth (from M3) — never in query strings.
-- Strict origin allowlist on REST and WebSockets. Vercel preview URLs are deliberately not allowed (owner decision).
+- Strict origin allowlist on REST and WebSockets, including the actual WebSocket upgrade (not just polling CORS). Vercel preview URLs are deliberately not allowed (owner decision).
 - No cookies, no accounts. Tokens are hashed server-side and compared in constant time (from M3).
 - REST stays minimal (health now, room creation later); membership is socket-based (from M3).
 - Nothing sensitive is logged: no tokens, no handshake auth, no full URLs.

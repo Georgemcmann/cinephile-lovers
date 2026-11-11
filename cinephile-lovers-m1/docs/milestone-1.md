@@ -2,6 +2,8 @@
 
 Status: **complete — verified in sandbox (desktop Chromium headless + Node 24)**. iPhone-Safari verification is intentionally deferred to the M2 prototype and the M4/M5 real-device passes (brief §13).
 
+> **Post-M1 note (2026-11-11):** M2 has started. `spike-debug.tsx` and `spike-sample.mp4` were removed, the debug chip was replaced by `node-badge.tsx`, and Lucide/ESLint are now present. The persistent-layer gate still passes. A real WebSocket-upgrade origin check was added to close the polling-only CORS gap; see the hardening row below. M2 status lives in [`milestone-2.md`](milestone-2.md).
+
 ## Scope
 
 What M1 contains, and deliberately does NOT contain:
@@ -41,7 +43,7 @@ What M1 contains, and deliberately does NOT contain:
 | `app/page.tsx` | Landing: title, tagline, CTA to lobby, privacy one-liner. Neutral (non-red) button per the deferred contrast decision. |
 | `app/lobby/page.tsx` | Lobby placeholder + spike chip + navigation to watch room. |
 | `app/room/page.tsx` | Watch Room placeholder + spike chip + navigation back. |
-| `public/spike-sample.mp4` | 8-second H.264 baseline + AAC sample (120 KB) so the spike works offline with the brief's baseline codecs. Dev-only; removable in M2. |
+| `public/spike-sample.mp4` | 8-second H.264 baseline + AAC sample (120 KB) so the spike works offline with the brief's baseline codecs. Dev-only; removed in M2. |
 
 ### server/
 
@@ -71,6 +73,7 @@ All commands below were executed against this exact code. Node 24.22.2, npm 11.1
 | S5 | REST preflight allowed / blocked | `curl -X OPTIONS .../api/health` | PASS — 204 vs 403 |
 | S6 | Unknown route | `curl http://localhost:4000/api/nothing` | PASS — `404 {"error":"not_found"}` |
 | S7 | Vercel-preview-style origin | `Origin: https://cinephile-git-preview.vercel.app` | PASS — no CORS header (owner decision #10 enforced) |
+| S8 | Actual WebSocket-upgrade origin enforcement (hardening, 2026-11-11) | `ws` handshake with allowed vs. disallowed `Origin` | PASS — allowed origin opens; `https://evil.example` is rejected by `allowRequest` |
 
 ### Client
 

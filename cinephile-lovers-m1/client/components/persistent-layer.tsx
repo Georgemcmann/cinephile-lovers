@@ -10,15 +10,7 @@ import {
 } from "react";
 import { usePathname } from "next/navigation";
 
-function ResumeOverlay({ onResume }: { onResume: () => void }) {
-  return (
-    <div className="resume-overlay">
-      <button type="button" onClick={onResume}>
-        Tap to resume
-      </button>
-    </div>
-  );
-}
+import { ResumeOverlay } from "./resume-overlay";
 
 /**
  * PersistentLayer — the one client layer that never unmounts during a
