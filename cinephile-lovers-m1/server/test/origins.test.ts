@@ -1,12 +1,9 @@
-// @ts-ignore Node.js type definitions are unavailable in this project.
-import assert from "node:assert/strict";
-// @ts-ignore Node.js type definitions are unavailable in this project.
-import { test } from "node:test";
+import process from "node:process";
+
+import { describe, expect, it } from "vitest";
 
 import { loadEnv, type Env } from "../src/config.js";
 import { allowedOrigins, originMiddleware } from "../src/origins.js";
-// @ts-ignore Node.js type definitions are unavailable in this project.
-import process from "node:process";
 
 const devEnv: Env = {
   PORT: 4000,
@@ -15,7 +12,7 @@ const devEnv: Env = {
   ROOM_TTL_HOURS: 0,
   ROOM_CREATE_RATE_LIMIT: 0,
   ROOM_CREATE_RATE_WINDOW_MIN: 0,
-  DEV_EXTRA_ORIGINS: ""
+  DEV_EXTRA_ORIGINS: "",
 };
 
 const prodEnv: Env = {
@@ -25,7 +22,7 @@ const prodEnv: Env = {
   ROOM_TTL_HOURS: 0,
   ROOM_CREATE_RATE_LIMIT: 0,
   ROOM_CREATE_RATE_WINDOW_MIN: 0,
-  DEV_EXTRA_ORIGINS: ""
+  DEV_EXTRA_ORIGINS: "",
 };
 
 type FakeResponse = {
@@ -48,84 +45,89 @@ function fakeResponse(): FakeResponse {
   };
 }
 
-test("development allows the frontend origin and both localhost spellings", () => {
-  assert.deepEqual(allowedOrigins(devEnv), [
-    "https://app.example",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-  ]);
-});
+describe("origins", () => {
+  it("development allows the frontend origin and both localhost spellings", () => {
+    expect(allowedOrigins(devEnv)).toEqual([
+      "https://app.example",
+      "http://localhost:3000",
+      "http://127.0.0.1:3000",
+    ]);
+  });
 
-test("production allows only the configured frontend origin", () => {
-  assert.deepEqual(allowedOrigins(prodEnv), ["https://app.example"]);
-});
+  it("production allows only the configured frontend origin", () => {
+    expect(allowedOrigins(prodEnv)).toEqual(["https://app.example"]);
+  });
 
-test("allowed origins receive CORS headers", () => {
-  const res = fakeResponse();
-  let nextCalled = false;
+  it("allowed origins receive CORS headers", () => {
+    const res = fakeResponse();
+    let nextCalled = false;
 
-  originMiddleware(devEnv)(
-    { headers: { origin: "http://localhost:3000" }, method: "GET" },
-    res,
-    () => {
-      nextCalled = true;
-    },
-  );
+    originMiddleware(devEnv)(
+      { headers: { origin: "http://localhost:3000" }, method: "GET" },
+      res,
+      () => {
+        nextCalled = true;
+      },
+    );
 
-  assert.equal(nextCalled, true);
-  assert.equal(
-    res.headers.get("Access-Control-Allow-Origin"),
-    "http://localhost:3000",
-  );
-  assert.equal(res.headers.get("Vary"), "Origin");
-});
+    expect(nextCalled).toBe(true);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(
+      "http://localhost:3000",
+    );
+    expect(res.headers.get("Vary")).toBe("Origin");
+  });
 
-test("disallowed origins receive no CORS header but still vary by origin", () => {
-  const res = fakeResponse();
-  let nextCalled = false;
+  it("disallowed origins receive no CORS header but still vary by origin", () => {
+    const res = fakeResponse();
+    let nextCalled = false;
 
-  originMiddleware(devEnv)(
-    { headers: { origin: "https://evil.example" }, method: "GET" },
-    res,
-    () => {
-      nextCalled = true;
-    },
-  );
+    originMiddleware(devEnv)(
+      { headers: { origin: "https://evil.example" }, method: "GET" },
+      res,
+      () => {
+        nextCalled = true;
+      },
+    );
 
-  assert.equal(nextCalled, true);
-  assert.equal(res.headers.get("Access-Control-Allow-Origin"), undefined);
-  assert.equal(res.headers.get("Vary"), "Origin");
-});
+    expect(nextCalled).toBe(true);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBeUndefined();
+    expect(res.headers.get("Vary")).toBe("Origin");
+  });
 
-test("FRONTEND_URL is normalized without a trailing slash", () => {
-  const previous = process.env.FRONTEND_URL;
-  process.env.FRONTEND_URL = "https://app.example/";
+  it("FRONTEND_URL is normalized without a trailing slash", () => {
+    const previous = process.env.FRONTEND_URL;
+    process.env.FRONTEND_URL = "https://app.example/";
 
-  try {
-    assert.equal(loadEnv().FRONTEND_URL, "https://app.example");
-  } finally {
-    if (previous === undefined) {
-      delete process.env.FRONTEND_URL;
-    } else {
-      process.env.FRONTEND_URL = previous;
+    try {
+      expect(loadEnv().FRONTEND_URL).toBe("https://app.example");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.FRONTEND_URL;
+      } else {
+        process.env.FRONTEND_URL = previous;
+      }
     }
-  }
-});
+  });
 
-test("OPTIONS is allowed for an allowed origin and refused otherwise", () => {
-  const allowed = fakeResponse();
-  originMiddleware(devEnv)(
-    { headers: { origin: "http://localhost:3000" }, method: "OPTIONS" },
-    allowed,
-    () => assert.fail("next must not run for OPTIONS"),
-  );
-  assert.equal(allowed.status, 204);
+  it("OPTIONS is allowed for an allowed origin and refused otherwise", () => {
+    const allowed = fakeResponse();
+    originMiddleware(devEnv)(
+      { headers: { origin: "http://localhost:3000" }, method: "OPTIONS" },
+      allowed,
+      () => {
+        throw new Error("next must not run for OPTIONS");
+      },
+    );
+    expect(allowed.status).toBe(204);
 
-  const refused = fakeResponse();
-  originMiddleware(devEnv)(
-    { headers: { origin: "https://evil.example" }, method: "OPTIONS" },
-    refused,
-    () => assert.fail("next must not run for OPTIONS"),
-  );
-  assert.equal(refused.status, 403);
+    const refused = fakeResponse();
+    originMiddleware(devEnv)(
+      { headers: { origin: "https://evil.example" }, method: "OPTIONS" },
+      refused,
+      () => {
+        throw new Error("next must not run for OPTIONS");
+      },
+    );
+    expect(refused.status).toBe(403);
+  });
 });

@@ -16,6 +16,8 @@ function formatTime(seconds: number): string {
   return hours > 0 ? `${hours}:${mm}:${ss}` : `${minutes}:${ss}`;
 }
 
+export { formatTime };
+
 /**
  * PlayerControls — the M2 control surface. Every button routes through the
  * persistent layer's command API; this component holds no direct element
@@ -25,12 +27,27 @@ function formatTime(seconds: number): string {
  * Seek semantics: while dragging, only the visual position updates; the
  * actual seek is committed once on release (pointer, keyboard or blur). The
  * M4/M5 scrub-throttle + echo-suppression composition (review R3) builds on
- * exactly this "commit-on-release" shape.
+ * exactly this "commit-on-release" shape: live scrub reports go out through
+ * the optional onScrub callback (the sync engine throttles them to one per
+ * 250 ms), and the final position is committed by the element's seeked
+ * event, which the engine emits as the authoritative sync:seek.
  *
  * Deliberately absent: a volume slider — iPhone Safari exposes no scriptable
  * volume (it is a hardware control there). A mute toggle works everywhere.
  */
-export function PlayerControls() {
+type PlayerControlsProps = {
+  /** M5 — live scrub indicator (throttled inside the sync engine). */
+  onScrub?: (position: number) => void;
+  /** M5 — drift checks pause while the user is scrubbing. */
+  onScrubStart?: () => void;
+  onScrubEnd?: () => void;
+};
+
+export function PlayerControls({
+  onScrub,
+  onScrubStart,
+  onScrubEnd,
+}: PlayerControlsProps) {
   const {
     state,
     togglePlay,
@@ -50,6 +67,16 @@ export function PlayerControls() {
       seek(scrubValue);
     }
     setScrubValue(null);
+    onScrubEnd?.();
+  };
+
+  const changeScrub = (value: number) => {
+    if (!Number.isFinite(value)) return;
+    if (scrubValue === null) {
+      onScrubStart?.();
+    }
+    setScrubValue(value);
+    onScrub?.(value);
   };
 
   return (
@@ -93,10 +120,7 @@ export function PlayerControls() {
           disabled={disabled || duration <= 0}
           aria-label="Seek in movie"
           onChange={(event) => {
-            const value = event.currentTarget.valueAsNumber;
-            if (Number.isFinite(value)) {
-              setScrubValue(value);
-            }
+            changeScrub(event.currentTarget.valueAsNumber);
           }}
           onPointerUp={commitScrub}
           onPointerCancel={commitScrub}

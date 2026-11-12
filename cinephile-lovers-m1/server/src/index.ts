@@ -7,6 +7,7 @@ import { healthRouter } from "./http/health.js";
 import { roomsRouter } from "./http/rooms.js";
 import { originMiddleware } from "./origins.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
+import { MembershipStore } from "./rooms/membership.js";
 import { RoomStore } from "./rooms/store.js";
 import { attachGateway } from "./sockets/gateway.js";
 
@@ -16,6 +17,7 @@ const app = express();
 const roomStore = new RoomStore({
   ttlMs: env.ROOM_TTL_HOURS * 60 * 60_000,
 });
+const membershipStore = new MembershipStore();
 const createRoomLimiter = new FixedWindowRateLimiter(
   env.ROOM_CREATE_RATE_LIMIT,
   env.ROOM_CREATE_RATE_WINDOW_MIN * 60_000,
@@ -71,13 +73,21 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
 app.use(errorHandler);
 
 const sweepTimer = setInterval(() => {
-  roomStore.sweep();
+  const removed = roomStore.sweep();
+  if (removed.length > 0) {
+    // Rooms swept from the authoritative store must die in the membership
+    // store too, otherwise an old token could still resume a dead room.
+    membershipStore.drop(removed);
+  }
   createRoomLimiter.sweep();
 }, 60_000);
 sweepTimer.unref();
 
 const httpServer = createServer(app);
-const io = attachGateway(httpServer, env);
+const io = attachGateway(httpServer, env, {
+  roomStore,
+  membershipStore,
+});
 
 httpServer.listen(env.PORT, () => {
   console.log(`cinephile server listening on :${env.PORT} (${env.NODE_ENV})`);

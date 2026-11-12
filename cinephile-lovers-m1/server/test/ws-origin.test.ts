@@ -1,10 +1,8 @@
-/// <reference types="node" />
-
-import { strict as assert } from "node:assert";
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { connect } from "node:net";
-import { after, before, test } from "node:test";
+
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const PORT = 4199;
 let server: ChildProcess | undefined;
@@ -67,31 +65,33 @@ function handshake(origin?: string): Promise<number> {
   });
 }
 
-before(async () => {
-  server = spawn(process.execPath, ["--import", "tsx", "src/index.ts"], {
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      PORT: String(PORT),
-      NODE_ENV: "development",
-    },
-    stdio: "ignore",
+describe("WebSocket origin allowlist", () => {
+  beforeAll(async () => {
+    server = spawn(process.execPath, ["--import", "tsx", "src/index.ts"], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        PORT: String(PORT),
+        NODE_ENV: "development",
+      },
+      stdio: "ignore",
+    });
+    await waitForHealth();
   });
-  await waitForHealth();
-});
 
-after(() => {
-  server?.kill("SIGTERM");
-});
+  afterAll(() => {
+    server?.kill("SIGTERM");
+  });
 
-test("an allowed origin may upgrade to a WebSocket", async () => {
-  assert.equal(await handshake("http://localhost:3000"), 101);
-});
+  it("allows an allowed origin to upgrade", async () => {
+    expect(await handshake("http://localhost:3000")).toBe(101);
+  });
 
-test("a disallowed origin is rejected during the upgrade", async () => {
-  assert.equal(await handshake("https://evil.example"), 400);
-});
+  it("rejects a disallowed origin during the upgrade", async () => {
+    expect(await handshake("https://evil.example")).toBe(400);
+  });
 
-test("a missing Origin header is rejected during the upgrade", async () => {
-  assert.equal(await handshake(), 400);
+  it("rejects a missing Origin header during the upgrade", async () => {
+    expect(await handshake()).toBe(400);
+  });
 });

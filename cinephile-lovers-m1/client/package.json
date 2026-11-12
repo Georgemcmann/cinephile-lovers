@@ -1,6 +1,6 @@
 {
   "name": "cinephile-lovers-client",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,10 +9,12 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "framer-motion": "^14.12.0",
     "lucide-react": "^1.70.0",
     "next": "^16.4.5",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "socket.io-client": "^4.8.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.5",

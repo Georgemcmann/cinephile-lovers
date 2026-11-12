@@ -1,6 +1,6 @@
-import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { after, before, test } from "node:test";
+
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const PORT = 4198;
 const ORIGIN = "http://localhost:3000";
@@ -28,61 +28,62 @@ function createRoom(): Promise<Response> {
   });
 }
 
-before(async () => {
-  server = spawn(process.execPath, ["--import", "tsx", "src/index.ts"], {
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      PORT: String(PORT),
-      NODE_ENV: "development",
-      ROOM_TTL_HOURS: "1",
-      ROOM_CREATE_RATE_LIMIT: "2",
-      ROOM_CREATE_RATE_WINDOW_MIN: "10",
-    },
-    stdio: "ignore",
+describe("POST /api/rooms", () => {
+  beforeAll(async () => {
+    server = spawn(process.execPath, ["--import", "tsx", "src/index.ts"], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        PORT: String(PORT),
+        NODE_ENV: "development",
+        ROOM_TTL_HOURS: "1",
+        ROOM_CREATE_RATE_LIMIT: "2",
+        ROOM_CREATE_RATE_WINDOW_MIN: "10",
+      },
+      stdio: "ignore",
+    });
+    await waitForHealth();
   });
-  await waitForHealth();
-});
 
-after(async () => {
-  if (!server) return;
-  const exited = new Promise<void>((resolve) => server?.once("exit", resolve));
-  server.kill("SIGTERM");
-  await exited;
-});
+  afterAll(async () => {
+    if (!server) return;
+    const exited = new Promise<void>((resolve) => server?.once("exit", resolve));
+    server.kill("SIGTERM");
+    await exited;
+  });
 
-test("creates a room and returns each secret exactly once", async () => {
-  const first = await createRoom();
-  assert.equal(first.status, 201);
-  assert.equal(first.headers.get("access-control-allow-origin"), ORIGIN);
-  assert.equal(first.headers.get("vary"), "Origin");
-  assert.equal(first.headers.get("cache-control"), "no-store");
+  it("creates a room and returns each secret exactly once", async () => {
+    const first = await createRoom();
+    expect(first.status).toBe(201);
+    expect(first.headers.get("access-control-allow-origin")).toBe(ORIGIN);
+    expect(first.headers.get("vary")).toBe("Origin");
+    expect(first.headers.get("cache-control")).toBe("no-store");
 
-  const room = (await first.json()) as Record<string, unknown>;
-  assert.match(String(room.roomId), /^[A-Za-z0-9_-]{22}$/);
-  assert.equal(room.invitePath, `/room/${String(room.roomId)}`);
-  assert.match(String(room.inviteSecret), /^[A-Za-z0-9_-]{43}$/);
-  assert.match(
-    String(room.recoveryCode),
-    /^[\da-f]{8}-[\da-f]{8}-[\da-f]{8}-[\da-f]{8}$/,
-  );
+    const room = (await first.json()) as Record<string, unknown>;
+    expect(String(room.roomId)).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    expect(room.invitePath).toBe(`/room/${String(room.roomId)}`);
+    expect(String(room.inviteSecret)).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(String(room.recoveryCode)).toMatch(
+      /^[\da-f]{8}-[\da-f]{8}-[\da-f]{8}-[\da-f]{8}$/,
+    );
 
-  const expiresAt = Date.parse(String(room.expiresAt));
-  assert.ok(Number.isFinite(expiresAt));
-  assert.ok(expiresAt > Date.now());
-  assert.ok(expiresAt <= Date.now() + 60 * 60_000 + 5_000);
+    const expiresAt = Date.parse(String(room.expiresAt));
+    expect(Number.isFinite(expiresAt)).toBe(true);
+    expect(expiresAt).toBeGreaterThan(Date.now());
+    expect(expiresAt).toBeLessThanOrEqual(Date.now() + 60 * 60_000 + 5_000);
 
-  assert.equal("secretHash" in room, false);
-  assert.equal("recoveryHash" in room, false);
+    expect("secretHash" in room).toBe(false);
+    expect("recoveryHash" in room).toBe(false);
 
-  const second = await createRoom();
-  assert.equal(second.status, 201);
-  const secondRoom = (await second.json()) as Record<string, unknown>;
-  assert.notEqual(secondRoom.roomId, room.roomId);
+    const second = await createRoom();
+    expect(second.status).toBe(201);
+    const secondRoom = (await second.json()) as Record<string, unknown>;
+    expect(secondRoom.roomId).not.toBe(room.roomId);
 
-  const refused = await createRoom();
-  assert.equal(refused.status, 429);
-  assert.equal(refused.headers.get("cache-control"), "no-store");
-  assert.ok(Number(refused.headers.get("retry-after")) >= 1);
-  assert.deepEqual(await refused.json(), { error: "rate_limited" });
+    const refused = await createRoom();
+    expect(refused.status).toBe(429);
+    expect(refused.headers.get("cache-control")).toBe("no-store");
+    expect(Number(refused.headers.get("retry-after"))).toBeGreaterThanOrEqual(1);
+    expect(await refused.json()).toEqual({ error: "rate_limited" });
+  });
 });

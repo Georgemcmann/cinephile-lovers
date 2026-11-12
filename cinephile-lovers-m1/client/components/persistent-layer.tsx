@@ -31,6 +31,26 @@ import { ResumeOverlay } from "./resume-overlay";
  * - UI state is derived from element-level events (timeupdate, play, pause,
  *   waiting, volumechange, ...), never from command success — the shape the
  *   sync engine needs (native fullscreen stays in sync, review R1).
+ *
+ * M5 plugs the sync engine in at this seam:
+ * - INTENT SINK: element events that are NOT consumed by an expectation are
+ *   USER intent and are handed to the sink (the sync engine emits them to
+ *   the server). This is the R1 rule "sync listens to element-level events"
+ *   made concrete — buttons, native controls and overlay taps all behave
+ *   identically because everything funnels through element events.
+ * - EXPECTED-ACTION RECORDS: every remote command (and drift correction)
+ *   registers what it is about to do BEFORE touching the element; the
+ *   resulting element event is consumed instead of re-emitted as intent.
+ *   Records expire (echo suppression with an expiry window, review R3), so
+ *   a lost broadcast cannot suppress future real intent forever.
+ * - THE R3 COMPOSITION RULE (scrub + suppression): the FINAL seeked event
+ *   after a commit-on-release scrub can never be swallowed — it is either
+ *   consumed by a fresh expectation or emitted as user intent; no time
+ *   window can drop it.
+ * - REMOTE play() ON AN UN-PRIMED ELEMENT rejects (autoplay policy). The
+ *   rejected play expectation is then EXTENDED (not deleted): the tap on the
+ *   resume overlay completes the REMOTE command instead of re-emitting it
+ *   as fresh user intent (which would yank the partner backwards).
  */
 
 type Phase = "landing" | "lobby" | "watch";
@@ -52,6 +72,40 @@ export type PlayerState = {
   error: string | null;
 };
 
+// --- M5 intent plumbing -----------------------------------------------------
+
+export type PlayerIntentKind = "play" | "pause" | "seek";
+
+/** One playback intent, derived from element events. `position` is the
+ *  element position at event time (seek target for seeks). */
+export type PlayerIntent = {
+  kind: PlayerIntentKind;
+  position: number;
+};
+
+/** Receives every UNMATCHED (user) intent. The sync engine registers itself. */
+export type PlayerIntentSink = (intent: PlayerIntent) => void;
+
+/** How long an expectation may suppress matching element events. */
+const EXPECT_TTL_MS = {
+  play: 3_000,
+  pause: 3_000,
+  seek: 5_000,
+} as const;
+
+/** A rejected remote play() stays completable by the overlay tap for this long. */
+const REMOTE_PLAY_REJECTED_TTL_MS = 30_000;
+
+/** Seek expectations match the event position within this tolerance. */
+const SEEK_MATCH_TOLERANCE_S = 0.5;
+
+type ExpectedRecord = {
+  kind: PlayerIntentKind;
+  /** Seeks match on |event - expected| <= tolerance; play/pause on kind. */
+  position: number | null;
+  expiresAt: number;
+};
+
 type PersistentContextValue = {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   nodeId: string | null;
@@ -63,6 +117,12 @@ type PersistentContextValue = {
   toggleMuted: () => void;
   enterFullscreen: () => void;
   canEnterFullscreen: boolean;
+  /** M5 — register the (single) receiver of unmatched user intents. */
+  setIntentSink: (sink: PlayerIntentSink | null) => void;
+  /** M5 — expect an element event soon; it will not count as user intent. */
+  expectIntent: (kind: PlayerIntentKind, position: number | null) => void;
+  /** M5 — apply a REMOTE (or engine-internal) command through the one writer. */
+  applyRemote: (intent: PlayerIntent) => void;
 };
 
 const INITIAL_STATE: PlayerState = {
@@ -91,6 +151,9 @@ const PersistentContext = createContext<PersistentContextValue>({
   toggleMuted: noop,
   enterFullscreen: noop,
   canEnterFullscreen: false,
+  setIntentSink: noop,
+  expectIntent: noop,
+  applyRemote: noop,
 });
 
 export function usePersistentVideo(): PersistentContextValue {
@@ -127,23 +190,64 @@ export function PersistentLayer({ children }: { children: React.ReactNode }) {
   const [canEnterFullscreen, setCanEnterFullscreen] = useState(false);
   const [state, setState] = useState<PlayerState>(INITIAL_STATE);
 
+  // M5: the intent sink and the expected-action records live in refs —
+  // they are coordination state for non-React systems (element events),
+  // never render inputs.
+  const sinkRef = useRef<PlayerIntentSink | null>(null);
+  const expectedRef = useRef<ExpectedRecord[]>([]);
+
   const patch = useCallback((partial: Partial<PlayerState>) => {
     setState((prev) => ({ ...prev, ...partial }));
   }, []);
+
+  const expectIntent = useCallback(
+    (kind: PlayerIntentKind, position: number | null) => {
+      const ttl = EXPECT_TTL_MS[kind];
+      expectedRef.current.push({
+        kind,
+        position,
+        expiresAt: Date.now() + ttl,
+      });
+    },
+    [],
+  );
+
+  /** Consume the oldest matching non-expired expectation, if any. */
+  const consumeExpected = useCallback(
+    (kind: PlayerIntentKind, position: number): boolean => {
+      const now = Date.now();
+      const records = expectedRef.current;
+      const index = records.findIndex(
+        (record) =>
+          record.kind === kind &&
+          record.expiresAt > now &&
+          (record.position === null ||
+            kind !== "seek" ||
+            Math.abs(record.position - position) <= SEEK_MATCH_TOLERANCE_S),
+      );
+      if (index === -1) return false;
+      records.splice(index, 1);
+      return true;
+    },
+    [],
+  );
 
   /**
    * play() can reject (autoplay policy, iOS low-power mode). NotAllowedError
    * is NOT an error state — it means "needs one tap": the resume overlay
    * appears and its tap IS the user gesture that unlocks playback. No timers,
    * no automatic retries behind the user's back.
+   * `onRejected` lets applyRemote mark the expectation as "completable
+   * later" — the overlay tap then finishes the REMOTE command.
    */
   const attemptPlay = useCallback(
-    (el: HTMLVideoElement) => {
+    (el: HTMLVideoElement, onRejected?: () => void) => {
       const request = el.play();
       if (request) {
         request.catch((err: unknown) => {
           if (err instanceof DOMException && err.name === "NotAllowedError") {
             patch({ resumeNeeded: true, playing: false });
+            onRejected?.();
           } else {
             patch({
               error: "Playback failed. Re-select the file and try again.",
@@ -171,20 +275,36 @@ export function PersistentLayer({ children }: { children: React.ReactNode }) {
     );
 
     const reportTime = () => patch({ currentTime: el.currentTime });
+    // M5 intent mapping (docs/participant-state-machine.md §3):
+    // - play/pause/seeked  → intent candidates (consumed by expectations,
+    //   otherwise handed to the sink as USER intent);
+    // - ended intentionally produces NO intent: the movie finished, the
+    //   partner keeps watching until their own end; replay emits fresh
+    //   play/seek intents through the normal path;
+    // - waiting/playing/canplay → buffering state only, never intent.
+    const emitIntent = (kind: PlayerIntentKind, position: number) => {
+      if (consumeExpected(kind, position)) return;
+      sinkRef.current?.({ kind, position });
+    };
     const listeners: Array<[string, () => void]> = [
-      [
-        "loadedmetadata",
-        () => patch({ status: "ready", duration: el.duration }),
-      ],
+      ["loadedmetadata", () => patch({ status: "ready", duration: el.duration })],
       ["durationchange", () => patch({ duration: el.duration })],
       ["timeupdate", reportTime],
-      ["seeked", reportTime],
-      [
-        "play",
-        () => patch({ playing: true, ended: false, resumeNeeded: false }),
-      ],
+      ["seeked", () => {
+        reportTime();
+        emitIntent("seek", el.currentTime);
+      }],
+      ["play", () => {
+        patch({ playing: true, ended: false, resumeNeeded: false });
+        emitIntent("play", el.currentTime);
+      }],
       ["playing", () => patch({ buffering: false })],
-      ["pause", () => patch({ playing: false })],
+      ["pause", () => {
+        patch({ playing: false });
+        // Reaching the end fires pause on some engines — that is not a
+        // user pause and must not sync (see the ended rule above).
+        if (!el.ended) emitIntent("pause", el.currentTime);
+      }],
       ["ended", () => patch({ playing: false, ended: true })],
       ["waiting", () => patch({ buffering: true })],
       ["canplay", () => patch({ buffering: false })],
@@ -209,8 +329,11 @@ export function PersistentLayer({ children }: { children: React.ReactNode }) {
         el.removeEventListener(type, handler);
       }
       el.removeEventListener("error", onError);
+      // The sink belongs to a sync engine bound to THIS element wiring —
+      // drop it so a destroyed engine can never receive intents.
+      sinkRef.current = null;
     };
-  }, [patch]);
+  }, [consumeExpected, patch]);
 
   const loadLocalFile = useCallback(
     (file: File) => {
@@ -305,6 +428,99 @@ export function PersistentLayer({ children }: { children: React.ReactNode }) {
     attemptPlay(el);
   }, [attemptPlay]);
 
+  // --- M5 seam ---------------------------------------------------------------
+
+  const setIntentSink = useCallback((sink: PlayerIntentSink | null) => {
+    sinkRef.current = sink;
+  }, []);
+
+  /**
+   * Apply a REMOTE command (partner broadcast, snapshot anchor, system pause
+   * or drift correction) through the one writer. Registers expectations
+   * FIRST so the element events these calls cause are consumed, never
+   * re-emitted as user intent (the R3 echo rule at the element level).
+   *
+   * Remote play also positions the element: a partner starting playback at
+   * P means "watch from P", not "watch from wherever I was paused". The
+   * positioning seek carries its own expectation. If play() is rejected
+   * (un-primed element — the normal iOS first-join case) the play
+   * expectation is EXTENDED so the overlay tap completes the remote command
+   * instead of emitting a duplicate user play.
+   */
+  const applyRemote = useCallback(
+    (intent: PlayerIntent) => {
+      const el = videoRef.current;
+      if (!el || !el.src) return; // nothing loaded yet — nothing to move
+
+      // Duration is NaN/0 until metadata arrives. Falling back to 0 would
+      // clamp every early seek (join-rule catch-up, remote play) to the
+      // start; an unbounded upper limit lets the element queue the seek.
+      const clamp = (time: number) => {
+        const max =
+          Number.isFinite(el.duration) && el.duration > 0
+            ? el.duration
+            : Number.POSITIVE_INFINITY;
+        return Math.min(Math.max(time, 0), max);
+      };
+
+      const doSeek = (position: number) => {
+        const target = clamp(position);
+        expectIntent("seek", target);
+        el.currentTime = target;
+      };
+
+      if (intent.kind === "seek") {
+        if (!Number.isFinite(intent.position)) return;
+        doSeek(intent.position);
+        return;
+      }
+
+      if (intent.kind === "pause") {
+        // A shared pause freezes an exact position. If this element drifted
+        // (or never followed an earlier seek), move it to the anchor first;
+        // pausing in place would leave the two screens at different times.
+        if (
+          Number.isFinite(intent.position) &&
+          Math.abs(el.currentTime - intent.position) > SEEK_MATCH_TOLERANCE_S
+        ) {
+          doSeek(intent.position);
+        }
+        // pause() on an already-paused element fires no event, so recording
+        // an expectation would only risk swallowing the next real pause.
+        if (el.paused) return;
+        expectIntent("pause", null);
+        el.pause();
+        return;
+      }
+
+      // kind === "play"
+      const target = Number.isFinite(intent.position)
+        ? clamp(intent.position)
+        : el.currentTime;
+      const needsSeek =
+        el.ended || Math.abs(el.currentTime - target) > SEEK_MATCH_TOLERANCE_S;
+      if (needsSeek) {
+        doSeek(target); // restart-after-ended is also handled here
+      }
+      // play() on an already-playing element fires no event; only request
+      // playback when the element is actually paused/ended.
+      if (!el.paused && !el.ended) return;
+      expectIntent("play", null);
+      attemptPlay(el, () => {
+        // NotAllowedError: keep the expectation alive for the overlay tap.
+        const records = expectedRef.current;
+        for (let i = records.length - 1; i >= 0; i -= 1) {
+          if (records[i].kind === "play") {
+            records[i].expiresAt =
+              Date.now() + REMOTE_PLAY_REJECTED_TTL_MS;
+            break;
+          }
+        }
+      });
+    },
+    [attemptPlay, expectIntent],
+  );
+
   const phase = phaseFromPathname(pathname);
   const loaded = state.status !== "idle";
 
@@ -320,6 +536,9 @@ export function PersistentLayer({ children }: { children: React.ReactNode }) {
         toggleMuted,
         enterFullscreen,
         canEnterFullscreen,
+        setIntentSink,
+        expectIntent,
+        applyRemote,
       }}
     >
       <div className="persistent-shell">

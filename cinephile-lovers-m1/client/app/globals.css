@@ -26,24 +26,75 @@
   --color-ink: #f5f5f5;
   --color-muted: #a3a3a3;
   --color-line: #303030;
+
+  /* M6a landing tokens */
+  --color-abyss: #050505;
+  --color-ember: #ff4a5c;
+
+  /* Typography: --font-display-src / --font-body-src are injected by
+     next/font on <html> (see app/layout.tsx). font-display utility = movie
+     poster voice; font-sans = body copy. */
+  --font-display:
+    var(--font-display-src), "Arial Narrow", Impact, sans-serif;
+  --font-sans:
+    var(--font-body-src), Inter, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  /* Landing motion tokens (Tailwind v4: --animate-* generates the
+     animate-* utility). */
+  --animate-beam-sway: beam-sway 11s ease-in-out infinite;
+  --animate-rec-pulse: rec-pulse 2.4s ease-in-out infinite;
+  --animate-marquee: marquee 32s linear infinite;
+  --animate-glow-breathe: glow-breathe 5.5s ease-in-out infinite;
+
+  @keyframes beam-sway {
+    0%,
+    100% {
+      transform: rotate(-1.1deg);
+    }
+    50% {
+      transform: rotate(1.1deg);
+    }
+  }
+
+  @keyframes rec-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      box-shadow: 0 0 0 0 rgb(240 68 82 / 0.45);
+    }
+    50% {
+      opacity: 0.55;
+      box-shadow: 0 0 0 5px rgb(240 68 82 / 0);
+    }
+  }
+
+  @keyframes marquee {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  @keyframes glow-breathe {
+    0%,
+    100% {
+      filter: drop-shadow(0 0 14px rgb(240 68 82 / 0.28));
+    }
+    50% {
+      filter: drop-shadow(0 0 26px rgb(240 68 82 / 0.5));
+    }
+  }
 }
 
 html {
   color-scheme: dark;
+  scroll-behavior: smooth;
 }
 
 body {
   background-color: var(--color-base);
   color: var(--color-ink);
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    Helvetica,
-    Arial,
-    sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -199,4 +250,117 @@ body {
 .seek-range {
   accent-color: var(--color-accent);
   height: 44px;
+}
+
+/* ============================================================
+   M6a — Landing design system ("The Midnight Screening")
+   Direction B: dark theater, projector beam, film grain,
+   black + red. Everything below is landing-only; the watch
+   room keeps the utility classes defined above.
+   ============================================================ */
+
+/*
+ * Film grain — an SVG turbulence tile jitters with steps() so it reads as
+ * celluloid rather than a static texture. The element is oversized
+ * (inset -100px) so the translate never exposes its edges.
+ */
+.film-grain {
+  position: fixed;
+  inset: -100px;
+  z-index: 70;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 280px 280px;
+  opacity: 0.055;
+  animation: grain-jitter 1.1s steps(6) infinite;
+}
+
+@keyframes grain-jitter {
+  0% {
+    transform: translate(0, 0);
+  }
+  17% {
+    transform: translate(-32px, 14px);
+  }
+  33% {
+    transform: translate(18px, -26px);
+  }
+  50% {
+    transform: translate(-12px, -8px);
+  }
+  67% {
+    transform: translate(28px, 20px);
+  }
+  83% {
+    transform: translate(-20px, 32px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+/* Cinema vignette — pulls the eye to the center of the "screen". */
+.film-vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 120% 90% at 50% 42%,
+    transparent 55%,
+    rgb(0 0 0 / 0.55) 100%
+  );
+}
+
+/* Sheen sweep across the primary CTA on hover / keyboard focus. */
+.btn-sheen {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.btn-sheen::after {
+  content: "";
+  position: absolute;
+  top: -40%;
+  bottom: -40%;
+  left: -30%;
+  width: 34%;
+  background: linear-gradient(
+    105deg,
+    transparent,
+    rgb(255 255 255 / 0.28),
+    transparent
+  );
+  transform: translateX(-160%) skewX(-18deg);
+  transition: transform 0.7s ease;
+  pointer-events: none;
+}
+
+.btn-sheen:hover::after,
+.btn-sheen:focus-visible::after {
+  transform: translateX(420%) skewX(-18deg);
+}
+
+/* Hollow display numerals for the "how it works" steps. */
+.step-num {
+  color: transparent;
+  -webkit-text-stroke: 1px #45454d;
+}
+
+/* Respect the OS-level reduced motion preference: clamp every CSS
+   animation/transition. Framer-motion entrances also self-disable via
+   useReducedMotion() in the components. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

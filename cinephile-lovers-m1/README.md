@@ -6,7 +6,7 @@ Private, two-person watch-together web app. Each person plays their **own local 
 
 ## Status
 
-Milestone 2 — Local Video Player (in progress). The M1 foundation and its persistent-layer gate are complete; the M2 real-iPhone gate is still outstanding. Scope and the remaining checklist live in [`docs/milestone-2.md`](docs/milestone-2.md). The M1 record is in [`docs/milestone-1.md`](docs/milestone-1.md).
+Milestones 1–5 are complete: persistent player foundation, local-file playback, room creation/joining, the two-person membership/session protocol, and playback synchronization (shared anchor, join catch-up, drift correction, partner-loss pause). The milestone records live in [`docs/`](docs).
 
 ## Stack
 
@@ -16,7 +16,7 @@ Milestone 2 — Local Video Player (in progress). The M1 foundation and its pers
 | `server/` | Node + Express + TypeScript + Socket.IO + Zod, in-memory state |
 | Infra target | Vercel (client) + Render (server). No database. |
 
-**Single-instance constraint:** rooms live in one process's memory. The backend cannot scale horizontally, and a deploy or restart ends all rooms. Accepted for MVP; the UI will show a "Room lost, create a new one" screen.
+**Single-instance constraint:** rooms live in one process's memory. The backend cannot scale horizontally, and a deploy or restart ends all rooms. Accepted for MVP; the UI shows a "room has ended" screen.
 
 ## Requirements
 
@@ -29,10 +29,11 @@ Backend (start this first):
 
 ```bash
 cd server
-cp .env.example .env
 npm install
 npm run dev          # listens on http://localhost:4000
 ```
+
+Optional configuration goes in `server/.env`, but `npm run dev` does not load it automatically — export the variables in your shell or run with `node --env-file=.env` / `tsx --env-file=.env`. The Zod defaults in `src/config.ts` match `.env.example`, so local development works without any file.
 
 Frontend:
 
@@ -45,12 +46,26 @@ npm run dev          # http://localhost:3000
 
 ## Verification
 
-Follow `docs/milestone-1.md` for the foundation record and `docs/milestone-2.md` for the local-player checks and the outstanding real-device gate.
+```bash
+cd server
+npm run typecheck
+npm test                 # Vitest: unit + integration (incl. WebSocket origin)
+npm run build
+
+# with the dev server running on :4000
+node scripts/verify-m4.mjs
+node scripts/verify-m5.mjs
+
+cd ../client
+npm run lint
+npx tsc --noEmit
+npm run build
+```
 
 ## Security posture (summary)
 
-- Invite secrets travel in URL fragments; session tokens will travel in the Socket.IO handshake auth (from M3) — never in query strings.
-- Strict origin allowlist on REST and WebSockets, including the actual WebSocket upgrade (not just polling CORS). Vercel preview URLs are deliberately not allowed (owner decision).
-- No cookies, no accounts. Tokens are hashed server-side and compared in constant time (from M3).
-- REST stays minimal (health now, room creation later); membership is socket-based (from M3).
+- Invite secrets travel in URL fragments and are scrubbed from the address bar immediately; they are never sent to the server in a URL. Session tokens travel in the Socket.IO handshake auth, never in query strings.
+- Strict origin allowlist on REST and WebSockets, enforced on the actual WebSocket upgrade (not just polling CORS). Vercel preview URLs are deliberately not allowed (owner decision).
+- No cookies, no accounts. Invite secrets and session tokens are hashed server-side and compared in constant time.
+- REST stays minimal (health + room creation); membership and room state are socket-based.
 - Nothing sensitive is logged: no tokens, no handshake auth, no full URLs.

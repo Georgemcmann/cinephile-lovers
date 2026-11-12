@@ -99,14 +99,14 @@ export class RoomStore {
     );
   }
 
-  /** Remove and count rooms idle beyond the TTL. Called by the sweeper. */
-  sweep(): number {
+  /** Remove rooms idle beyond the TTL. Returns the removed room IDs. */
+  sweep(): string[] {
     const now = this.now();
-    let removed = 0;
+    const removed: string[] = [];
     for (const [roomId, record] of this.rooms) {
       if (now - record.lastActivityAt > this.ttlMs) {
         this.rooms.delete(roomId);
-        removed += 1;
+        removed.push(roomId);
       }
     }
     return removed;
