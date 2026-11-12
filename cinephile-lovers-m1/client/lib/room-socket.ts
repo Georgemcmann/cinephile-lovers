@@ -16,12 +16,10 @@
 
 import { io, type Socket } from "socket.io-client";
 
+import { serverBaseUrl } from "./server-url";
 import type { SlotId, StoredSession } from "./session-store";
 
 export type { SlotId };
-
-const SOCKET_BASE =
-  process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://localhost:4000";
 
 export type Role = "creator" | "partner";
 
@@ -89,7 +87,7 @@ export function createRoomSocket(
   roomId: string,
   stored: StoredSession | null,
 ): Socket {
-  return io(SOCKET_BASE, {
+  return io(serverBaseUrl("socket"), {
     // Resume by token when we have one; otherwise announce the room so the
     // middleware can still validate the shape (a bare roomId is a fresh
     // connection, not a failed resume).

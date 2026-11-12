@@ -1,12 +1,13 @@
+import { serverBaseUrl } from "./server-url";
+
 /**
  * Thin REST client. M3 covers room creation only; joining/exchanging the
  * invite secret is a socket concern (M4) and deliberately has NO REST call
  * (review R2: no REST token exchange).
  *
- * The base URL is inlined at build time from NEXT_PUBLIC_API_URL; the
- * localhost fallback keeps `npm run dev` working without .env.local.
+ * The base URL follows the page origin (localhost, LAN, or forwarded
+ * tunnel); NEXT_PUBLIC_API_URL remains the fallback for other deployments.
  */
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export type CreatedRoom = {
   roomId: string;
@@ -38,14 +39,14 @@ export async function createRoom(): Promise<CreatedRoom> {
   try {
     // Generous timeout: free-tier hosts sleep, and the first request of the
     // day may be the one that wakes the server (review R8).
-    response = await fetch(`${API_BASE}/api/rooms`, {
+    response = await fetch(`${serverBaseUrl("api")}/api/rooms`, {
       method: "POST",
       signal: AbortSignal.timeout(20_000),
     });
   } catch {
     throw new CreateRoomError(
       "unreachable",
-      "Could not reach the server. It may be waking up — try again in a minute.",
+      "Could not reach the server. It may be waking up; when testing on another device, make sure the forwarded API port (4000) is set to Public (VS Code Ports panel), not Private, and that the API URL points to the forwarded server.",
     );
   }
 
