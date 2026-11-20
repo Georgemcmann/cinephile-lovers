@@ -383,6 +383,10 @@ export function attachGateway(
       const snapshot = membership.snapshot(active.roomId);
       if (!snapshot) return reply({ ok: false, error: "room_gone" });
       membership.touch(active.roomId);
+      // A resume/hello is meaningful activity too; keep the room's TTL clock
+      // in sync with membership activity so the sweeper cannot drop a room
+      // that a client is actively resuming.
+      roomStore.touch(active.roomId);
       reply({
         ok: true,
         you: {
@@ -443,7 +447,9 @@ export function attachGateway(
     });
 
     // --- room:recover — creator escape hatch (token-design §3/§4). Hard
-    // rate limited; re-mints the creator seat A; never touches B.
+    // rate limited; re-mints the creator seat A. B is untouched unless the
+    // recovered token was itself seated in B, in which case that seat (and
+    // its file metadata) is released.
     socket.on("room:recover", (payload: unknown, ack?: Ack<{
       token: string;
       slot: SlotId;
@@ -487,6 +493,11 @@ export function attachGateway(
         io.to(recovered.evictedSocketId).emit("session:replaced");
         evict(io, recovered.evictedSocketId);
       }
+      // Recovering from a session that sat in B releases that seat AND its
+      // file metadata; the remaining seat must not keep showing stale data.
+      if (recovered.freedSlot) {
+        broadcastFiles(io, membership, roomId);
+      }
       broadcastState(io, membership, roomId);
     });
 
@@ -528,6 +539,12 @@ export function attachGateway(
             reason: "reset",
           });
           evict(io, evictedSocketId);
+        }
+        // freePartnerSeat() also wipes B's file metadata. Without this event
+        // the creator's UI keeps showing the removed partner's old file and
+        // same-file check until the next announce/reload.
+        if (freed) {
+          broadcastFiles(io, membership, roomId);
         }
         broadcastState(io, membership, roomId);
       },
@@ -678,5 +695,16 @@ function broadcastState(
   const snapshot = membership.snapshot(roomId);
   if (snapshot) {
     io.to(roomChannel(roomId)).emit("room:state", { slots: snapshot.slots });
+  }
+}
+
+function broadcastFiles(
+  io: SocketIoServer,
+  membership: MembershipStore,
+  roomId: string,
+): void {
+  const snapshot = membership.snapshot(roomId);
+  if (snapshot) {
+    io.to(roomChannel(roomId)).emit("file:state", { files: snapshot.files });
   }
 }

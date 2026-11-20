@@ -37,16 +37,21 @@ export class CreateRoomError extends Error {
 export async function createRoom(): Promise<CreatedRoom> {
   let response: Response;
   try {
-    // Generous timeout: free-tier hosts sleep, and the first request of the
-    // day may be the one that wakes the server (review R8).
+    // Generous timeout: a sleeping free-tier host can take about a minute to
+    // cold-start, and this request may be the one that wakes it (review R8).
     response = await fetch(`${serverBaseUrl("api")}/api/rooms`, {
       method: "POST",
-      signal: AbortSignal.timeout(20_000),
+      cache: "no-store",
+      signal: AbortSignal.timeout(75_000),
     });
   } catch {
+    const devHint =
+      process.env.NODE_ENV === "production"
+        ? ""
+        : " When testing on another device, make sure the forwarded API port (4000) is set to Public (VS Code Ports panel), not Private, and that the API URL points to the forwarded server.";
     throw new CreateRoomError(
       "unreachable",
-      "Could not reach the server. It may be waking up; when testing on another device, make sure the forwarded API port (4000) is set to Public (VS Code Ports panel), not Private, and that the API URL points to the forwarded server.",
+      `Could not reach the server. It may be starting up — wait a minute and try again.${devHint}`,
     );
   }
 

@@ -30,7 +30,10 @@ import {
 } from "@/lib/room-socket";
 import {
   clearStoredSession,
+  readSecret,
   readStoredSession,
+  takeRecoveryCode,
+  writeSecret,
   writeStoredSession,
 } from "@/lib/session-store";
 import {
@@ -39,9 +42,6 @@ import {
   type SyncEngine,
   type SyncUiState,
 } from "@/lib/sync-engine";
-
-const inviteKey = (roomId: string) => `cl:invite:${roomId}`;
-const recoveryKey = (roomId: string) => `cl:recovery:${roomId}`;
 
 // base64url room ids are 22 chars; the shape check is deliberately loose —
 // the server is the authority on whether the room exists.
@@ -95,28 +95,38 @@ function runCapture(roomId: string): void {
   // the URL for the rest of the session (owner directive, R2).
   const fromHash = window.location.hash.replace(/^#/, "");
   if (fromHash) {
-    sessionStorage.setItem(inviteKey(roomId), fromHash);
-    window.history.replaceState(
-      null,
-      "",
-      window.location.pathname + window.location.search,
-    );
+    writeSecret(roomId, fromHash);
+    try {
+      window.history.replaceState(
+        null,
+        "",
+        window.location.pathname + window.location.search,
+      );
+    } catch {
+      // Some embedded browsers refuse history writes; the secret is still
+      // held in memory and the app remains usable.
+    }
   }
 
   // 2) Same-tab reload: sessionStorage restores the key. A NEW tab does not
   // inherit it — the invite link is the only transport for the secret.
-  const secret = fromHash || sessionStorage.getItem(inviteKey(roomId));
+  const secret = fromHash || readSecret(roomId);
 
   // 3) The recovery code takes the sessionStorage side-channel from the
   // lobby (post-creation) and is consumed here: shown exactly once, never
-  // stored client-side afterwards.
-  const recovery = sessionStorage.getItem(recoveryKey(roomId));
-  if (recovery) {
-    sessionStorage.removeItem(recoveryKey(roomId));
-  }
+  // stored client-side afterwards. The helper is storage-safe.
+  const recovery = takeRecoveryCode(roomId);
 
   // REPLACE (not mutate) so subscribers see a new snapshot identity.
   captureStates.set(roomId, { done: true, secret, recovery });
+  for (const listener of listeners) listener();
+}
+
+/** Retire the recovery code after the explicit "I saved it" step. */
+function markRecoveryConsumed(roomId: string): void {
+  const state = captureStates.get(roomId);
+  if (!state || state.recovery === null) return;
+  captureStates.set(roomId, { ...state, recovery: null });
   for (const listener of listeners) listener();
 }
 
@@ -233,6 +243,11 @@ export default function WatchRoomPage() {
           setFiles(ack.snapshot.files);
           setChat(ack.snapshot.chat);
           lastSnapshotRef.current = ack.snapshot.playback;
+          // Feed the fresh anchor to any live engine now; a re-render may
+          // also recreate the engine, which reads the same
+          // lastSnapshotRef. Either way the client must not keep projecting
+          // from a stale anchor after missing commands while offline.
+          engineRef.current?.applyAnchorFromSnapshot(ack.snapshot.playback);
           setPhase("joined");
         } else if (ack.error === "room_gone" || ack.error === "timeout") {
           stopReconnecting(socket);
@@ -267,6 +282,10 @@ export default function WatchRoomPage() {
         setFiles(ack.snapshot.files);
         setChat(ack.snapshot.chat);
         lastSnapshotRef.current = ack.snapshot.playback;
+        // On the initial join the engine does not exist yet and will read the
+        // snapshot at creation; on a rejoin while the phase stayed "joined"
+        // any live engine must adopt the fresh anchor (same reason as hello).
+        engineRef.current?.applyAnchorFromSnapshot(ack.snapshot.playback);
         setPhase("joined");
       } else if (ack.error === "invalid_invite" && sessionRejected) {
         // The token was refused AND the invite no longer opens anything:
@@ -406,6 +425,7 @@ export default function WatchRoomPage() {
       setFiles(ack.snapshot.files);
       setChat(ack.snapshot.chat);
       lastSnapshotRef.current = ack.snapshot.playback;
+      engineRef.current?.applyAnchorFromSnapshot(ack.snapshot.playback);
       setPhase("joined");
     } else {
       setRecoverError(describeRecoveryError(ack.error));
@@ -610,6 +630,7 @@ export default function WatchRoomPage() {
           roomId={roomId}
           inviteSecret={capture.secret}
           recoveryCode={capture.recovery}
+          onRecoveryDismissed={() => markRecoveryConsumed(roomId)}
         />
       ) : null}
 

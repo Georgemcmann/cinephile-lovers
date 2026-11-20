@@ -7,8 +7,7 @@ import { LoaderCircle, Plus } from "lucide-react";
 
 import { NodeBadge } from "@/components/node-badge";
 import { CreateRoomError, createRoom } from "@/lib/api";
-
-const recoveryKey = (roomId: string) => `cl:recovery:${roomId}`;
+import { writeRecoveryCode } from "@/lib/session-store";
 
 /**
  * Lobby — M3 makes it functional: "Create a room" calls the backend and
@@ -32,7 +31,7 @@ export default function LobbyPage() {
     setError(null);
     try {
       const room = await createRoom();
-      sessionStorage.setItem(recoveryKey(room.roomId), room.recoveryCode);
+      writeRecoveryCode(room.roomId, room.recoveryCode);
       router.push(`/room/${room.roomId}#${room.inviteSecret}`);
     } catch (err) {
       setError(

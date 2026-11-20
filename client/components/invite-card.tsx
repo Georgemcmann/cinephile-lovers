@@ -8,6 +8,8 @@ type InviteCardProps = {
   inviteSecret: string;
   /** Present ONLY right after creation; shown once, then gone (R2). */
   recoveryCode: string | null;
+  /** Called after the user confirms the recovery code was saved. */
+  onRecoveryDismissed?: () => void;
 };
 
 /**
@@ -42,6 +44,7 @@ export function InviteCard({
   roomId,
   inviteSecret,
   recoveryCode,
+  onRecoveryDismissed,
 }: InviteCardProps) {
   const origin = useSyncExternalStore(
     subscribeToNothing,
@@ -166,7 +169,10 @@ export function InviteCard({
             </button>
             <button
               type="button"
-              onClick={() => setRecoveryDismissed(true)}
+              onClick={() => {
+                setRecoveryDismissed(true);
+                onRecoveryDismissed?.();
+              }}
               className="inline-flex min-h-11 items-center rounded-full px-4 text-sm text-muted transition-colors hover:text-ink"
             >
               I saved it

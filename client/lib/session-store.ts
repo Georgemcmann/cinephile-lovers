@@ -21,6 +21,13 @@ export type StoredSession = {
 
 const sessionKey = (roomId: string) => `cl:session:${roomId}`;
 const inviteKey = (roomId: string) => `cl:invite:${roomId}`;
+const recoveryKey = (roomId: string) => `cl:recovery:${roomId}`;
+
+// In-memory fallback for browsers where sessionStorage throws (Safari
+// private mode / storage disabled). It covers client-side navigation from
+// Lobby to the room page, which is the path both secrets normally take.
+const memorySecrets = new Map<string, string>();
+const memoryRecoveryCodes = new Map<string, string>();
 
 export function readStoredSession(roomId: string): StoredSession | null {
   try {
@@ -61,10 +68,48 @@ export function clearStoredSession(roomId: string): void {
 
 export function readSecret(roomId: string): string | null {
   try {
-    return window.sessionStorage.getItem(inviteKey(roomId));
+    const stored = window.sessionStorage.getItem(inviteKey(roomId));
+    if (stored) return stored;
   } catch {
-    return null;
+    // Fall through to the in-memory copy.
   }
+  return memorySecrets.get(roomId) ?? null;
+}
+
+export function writeSecret(roomId: string, secret: string): void {
+  memorySecrets.set(roomId, secret);
+  try {
+    window.sessionStorage.setItem(inviteKey(roomId), secret);
+  } catch {
+    // Private mode / storage disabled. The in-memory copy still covers
+    // client-side navigation; only a page reload loses the invite link.
+  }
+}
+
+/** Recovery codes take the same tab-only side-channel as the invite secret. */
+export function writeRecoveryCode(roomId: string, code: string): void {
+  memoryRecoveryCodes.set(roomId, code);
+  try {
+    window.sessionStorage.setItem(recoveryKey(roomId), code);
+  } catch {
+    // The in-memory copy covers the Lobby -> room navigation.
+  }
+}
+
+/** Read and remove the recovery code — it is shown once, then gone. */
+export function takeRecoveryCode(roomId: string): string | null {
+  let code = memoryRecoveryCodes.get(roomId) ?? null;
+  memoryRecoveryCodes.delete(roomId);
+  try {
+    const stored = window.sessionStorage.getItem(recoveryKey(roomId));
+    if (stored) {
+      window.sessionStorage.removeItem(recoveryKey(roomId));
+      code = stored;
+    }
+  } catch {
+    // The in-memory copy (if any) is returned.
+  }
+  return code;
 }
 
 /**
@@ -73,6 +118,7 @@ export function readSecret(roomId: string): string | null {
  * tab. It is never copied to localStorage and never re-enters the URL.
  */
 export function consumeSecret(roomId: string): void {
+  memorySecrets.delete(roomId);
   try {
     window.sessionStorage.removeItem(inviteKey(roomId));
   } catch {

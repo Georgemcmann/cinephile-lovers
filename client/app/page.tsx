@@ -1,42 +1,58 @@
 "use client";
 
-import Link from "next/link";
+import { useEffect, useState } from "react";
 import {
   motion,
   useReducedMotion,
   type Variants,
 } from "framer-motion";
 import {
-  ArrowRight,
-  KeyRound,
   MessagesSquare,
   ShieldCheck,
   Wifi,
 } from "lucide-react";
 
 import { FilmGrain } from "@/components/landing/film-grain";
-import { ProjectorBeam } from "@/components/landing/projector-beam";
+import { HeroMidnight } from "@/components/landing/hero-midnight";
+import { HeroMarquee } from "@/components/landing/hero-marquee";
+import { HeroVelvet } from "@/components/landing/hero-velvet";
+import { EASE, makeEnter } from "@/components/landing/motion";
 
 /*
- * Landing — Direction B, "The Midnight Screening".
+ * Landing — Direction B, "The Midnight Screening", now hosting three hero
+ * variants behind a small preview switcher:
  *
- * A dark theater: a warm projector beam cuts through black, dust drifts in
- * the light, the title glows like a neon marquee. Black + red only; motion
- * is cinematic (slow, eased, staggered) rather than playful.
+ *   midnight — the original: warm projector beam, dust, mask-reveal title
+ *   marquee  — "Crimson Marquee": neon sign, flickering tube, amber bulbs
+ *   noir     — "Velvet Noir": crimson velvet curtain, serif title, gold
+ *
+ * The switcher persists to localStorage and honors a `?hero=` query param
+ * (midnight | marquee | noir) so a specific variant can be shared or
+ * tested on a phone directly. It is a preview tool: delete the block
+ * marked HERO SWITCHER once a direction is chosen.
  *
  * Pure presentation — every product behavior (create room, invite link,
  * join) lives in /lobby and the room page. This page links, it does not
  * own logic.
  *
  * Motion contract:
- * - Hero elements enter once on load with explicit delays (a fixed
- *   choreography beats nested variants for a one-shot sequence).
+ * - Hero elements enter once on load with explicit delays.
  * - Scroll sections reveal once via whileInView.
- * - prefers-reduced-motion: entrances become pure fades, beam sway, dust
- *   and grain stop (see globals.css media query + useReducedMotion here).
+ * - prefers-reduced-motion: entrances become pure fades; CSS loops are
+ *   clamped in globals.css.
  */
 
-const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
+type HeroVariant = "midnight" | "marquee" | "noir";
+
+const VARIANT_ORDER: HeroVariant[] = ["midnight", "marquee", "noir"];
+
+const VARIANT_LABELS: Record<HeroVariant, string> = {
+  midnight: "Midnight",
+  marquee: "Marquee",
+  noir: "Noir",
+};
+
+const STORAGE_KEY = "cl-hero-variant";
 
 const MARQUEE_ITEMS = [
   "NOW SHOWING",
@@ -83,14 +99,52 @@ const FEATURES = [
   },
 ] as const;
 
-const TRUST = [
-  { icon: ShieldCheck, label: "Files never leave your devices" },
-  { icon: Wifi, label: "Frame-locked playback" },
-  { icon: KeyRound, label: "Invite-only, two seats" },
-] as const;
+function isHeroVariant(value: string | null): value is HeroVariant {
+  return (
+    value === "midnight" || value === "marquee" || value === "noir"
+  );
+}
 
 export default function LandingPage() {
   const reduceMotion = useReducedMotion() === true;
+  const [variant, setVariant] = useState<HeroVariant>("midnight");
+
+  /*
+   * Resolve the previewed hero: ?hero= wins (shareable/device testing),
+   * then the saved choice, then the default. Effects run client-only, so
+   * the server-rendered page (Midnight) and hydration stay consistent.
+   */
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("hero");
+    if (isHeroVariant(requested)) {
+      // Client-only preview state read after hydration; the server render
+      // always uses the default variant so hydration stays consistent.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setVariant(requested);
+      return;
+    }
+    let saved: string | null = null;
+    try {
+      saved = window.localStorage.getItem(STORAGE_KEY);
+    } catch {
+      saved = null;
+    }
+    if (isHeroVariant(saved)) {
+      setVariant(saved);
+    }
+  }, []);
+
+  const pickVariant = (next: HeroVariant) => {
+    setVariant(next);
+    try {
+      window.localStorage.setItem(STORAGE_KEY, next);
+    } catch {
+      /* private mode — preview still works for this page load */
+    }
+  };
+
+  /* One-shot entrance helper, shared by header + non-hero sections. */
+  const enter = makeEnter(reduceMotion);
 
   /*
    * Scroll-reveal variants (how-it-works + features). Reduced motion gets
@@ -111,148 +165,36 @@ export default function LandingPage() {
     show: { transition: { staggerChildren: 0.14 } },
   };
 
-  /* One-shot hero entrance: fade only when the OS asks for less motion. */
-  const enter = (delay: number) =>
-    reduceMotion
-      ? {
-          initial: { opacity: 0 },
-          animate: { opacity: 1 },
-          transition: { duration: 0.4, delay, ease: "linear" as const },
-        }
-      : {
-          initial: { opacity: 0, y: 24 },
-          animate: { opacity: 1, y: 0 },
-          transition: { duration: 0.8, delay, ease: EASE },
-        };
-
-  /* Title lines rise out of a clipped mask, like curtains parting. */
-  const titleLine = (delay: number) => ({
-    initial: { y: reduceMotion ? "0%" : "112%" },
-    animate: { y: "0%" },
-    transition: { duration: reduceMotion ? 0.4 : 1.05, delay, ease: EASE },
-  });
-
   return (
     <main className="relative flex flex-1 flex-col overflow-clip bg-abyss">
       <FilmGrain />
 
-      {/* ================= HERO ================= */}
-      <section className="relative flex min-h-[92svh] flex-col">
-        <ProjectorBeam />
+      {/* Shared header chrome, above every hero variant. */}
+      <motion.header
+        {...enter(0)}
+        className="absolute inset-x-0 top-0 z-30 flex items-center justify-between px-6 pt-[max(1.25rem,env(safe-area-inset-top))] sm:px-10"
+      >
+        <p className="flex items-center gap-2.5 font-display text-sm tracking-[0.22em] text-ink">
+          <span
+            aria-hidden="true"
+            className="inline-block h-2 w-2 rounded-full bg-soft animate-rec-pulse"
+          />
+          CINEPHILE LOVERS
+        </p>
+        <p className="rounded-full border border-line px-3 py-1.5 text-[10px] tracking-[0.28em] text-muted">
+          INVITE ONLY
+        </p>
+      </motion.header>
 
-        {/* Red screen-glow pooling behind the title. */}
-        <div
-          aria-hidden="true"
-          className="absolute left-1/2 top-[42%] h-95 w-[min(88vw,720px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent/10 blur-[110px]"
-        />
-
-        <header className="relative z-10 flex items-center justify-between px-6 pt-[max(1.25rem,env(safe-area-inset-top))] sm:px-10">
-          <motion.p
-            {...enter(0)}
-            className="flex items-center gap-2.5 font-display text-sm tracking-[0.22em] text-ink"
-          >
-            <span
-              aria-hidden="true"
-              className="inline-block h-2 w-2 rounded-full bg-soft animate-rec-pulse"
-            />
-            CINEPHILE LOVERS
-          </motion.p>
-          <motion.p
-            {...enter(0.1)}
-            className="rounded-full border border-line px-3 py-1.5 text-[10px] tracking-[0.28em] text-muted"
-          >
-            INVITE ONLY
-          </motion.p>
-        </header>
-
-        <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-6 px-6 py-20 text-center">
-          <motion.p
-            {...enter(0.05)}
-            className="flex items-center gap-3 text-[11px] uppercase tracking-[0.42em] text-muted"
-          >
-            <span aria-hidden="true" className="h-1 w-1 rounded-full bg-soft" />
-            A private screening for two
-            <span aria-hidden="true" className="h-1 w-1 rounded-full bg-soft" />
-          </motion.p>
-
-          <h1 className="font-display text-[clamp(4.5rem,17vw,10.5rem)] leading-[0.88] tracking-[0.02em]">
-            <span className="block overflow-hidden pb-1">
-              <motion.span {...titleLine(0.2)} className="block text-ink">
-                CINEPHILE
-              </motion.span>
-            </span>
-            <span className="block overflow-hidden pb-1">
-              <motion.span
-                {...titleLine(0.35)}
-                className="block bg-linear-to-b from-ember via-accent to-[#7a1220] bg-clip-text text-transparent animate-glow-breathe"
-              >
-                LOVERS
-              </motion.span>
-            </span>
-          </h1>
-
-          <motion.p
-            {...enter(0.6)}
-            className="italic tracking-wide text-soft"
-          >
-            Two hearts. One screen.
-          </motion.p>
-
-          <motion.p
-            {...enter(0.72)}
-            className="max-w-md text-sm leading-relaxed text-muted"
-          >
-            You each play your own copy of the movie. Files never leave your
-            devices — the server only keeps the two of you in sync.
-          </motion.p>
-
-          <motion.div
-            {...enter(0.85)}
-            className="mt-2 flex flex-col items-center gap-3 sm:flex-row"
-          >
-            <motion.div
-              whileHover={reduceMotion ? undefined : { scale: 1.03 }}
-              whileTap={reduceMotion ? undefined : { scale: 0.97 }}
-              transition={{ type: "spring", stiffness: 420, damping: 24 }}
-            >
-              <Link
-                href="/lobby"
-                className="btn-sheen group inline-flex min-h-13 items-center gap-2.5 rounded-full bg-btn-red px-9 text-base font-semibold shadow-[0_10px_44px_-8px_rgba(227,38,54,0.55)] transition-colors hover:bg-btn-red-deep"
-              >
-                Enter the lobby
-                <ArrowRight
-                  size={18}
-                  aria-hidden="true"
-                  className="transition-transform duration-300 group-hover:translate-x-1"
-                />
-              </Link>
-            </motion.div>
-            <Link
-              href="#how"
-              className="inline-flex min-h-13 items-center rounded-full border border-line px-8 text-sm text-muted transition-colors hover:border-muted/60 hover:text-ink"
-            >
-              How it works
-            </Link>
-          </motion.div>
-
-          <motion.ul
-            {...enter(1)}
-            className="mt-8 flex flex-col items-center gap-x-6 gap-y-2 text-xs text-muted sm:flex-row"
-          >
-            {TRUST.map(({ icon: Icon, label }) => (
-              <li key={label} className="flex items-center gap-2">
-                <Icon size={14} aria-hidden="true" className="text-soft" />
-                {label}
-              </li>
-            ))}
-          </motion.ul>
-        </div>
-      </section>
+      {/* ================= HERO (variant) ================= */}
+      {variant === "midnight" && <HeroMidnight />}
+      {variant === "marquee" && <HeroMarquee />}
+      {variant === "noir" && <HeroVelvet />}
 
       {/* ================= MARQUEE DIVIDER ================= */}
       <div
         aria-hidden="true"
-        className="relative border-y border-line/60 py-4 mask-[linear-gradient(to_right,transparent,black_12%,black_88%,transparent)]"
+        className="relative border-y border-line/60 py-4 [mask-image:linear-gradient(to_right,transparent,black_12%,black_88%,transparent)]"
       >
         <div className="flex w-max animate-marquee">
           {[0, 1].map((copy) => (
@@ -305,7 +247,7 @@ export default function LandingPage() {
                 >
                   {step.num}
                 </span>
-                <h3 className="mt-4 font-semibold text-ink">
+                <h3 className="mt-4 text-base font-semibold text-ink">
                   {step.title}
                 </h3>
                 <p className="mt-2 text-sm leading-relaxed text-muted">
@@ -337,7 +279,7 @@ export default function LandingPage() {
                 aria-hidden="true"
                 className="text-muted transition-colors duration-300 group-hover:text-soft"
               />
-              <h3 className="mt-4 font-semibold text-ink">
+              <h3 className="mt-4 text-base font-semibold text-ink">
                 {title}
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-muted">{body}</p>
@@ -367,6 +309,27 @@ export default function LandingPage() {
           Cinephile Lovers — a screening room that fits in two pockets.
         </motion.p>
       </footer>
+
+      {/* ================= HERO SWITCHER (preview tool) =================
+          Persisted to localStorage; ?hero=midnight|marquee|noir overrides.
+          Delete this whole block once a direction is chosen. */}
+      <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-1 rounded-full border border-line bg-black/75 p-1 backdrop-blur">
+        {VARIANT_ORDER.map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => pickVariant(v)}
+            aria-pressed={variant === v}
+            className={
+              variant === v
+                ? "rounded-full bg-btn-red px-3.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-ink"
+                : "rounded-full px-3.5 py-1.5 text-[10px] uppercase tracking-[0.18em] text-muted transition-colors hover:text-ink"
+            }
+          >
+            {VARIANT_LABELS[v]}
+          </button>
+        ))}
+      </div>
     </main>
   );
 }
