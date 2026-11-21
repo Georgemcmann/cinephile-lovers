@@ -4,6 +4,7 @@ import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { ArrowRight, KeyRound, ShieldCheck, Wifi } from "lucide-react";
 
+import { PereNote } from "@/components/landing/pere-note";
 import { ProjectorBeam } from "@/components/landing/projector-beam";
 import { makeEnter } from "@/components/landing/motion";
 
@@ -77,8 +78,12 @@ export function HeroMidnight() {
           Two hearts. One screen.
         </motion.p>
 
+        <motion.div {...enter(0.68)}>
+          <PereNote />
+        </motion.div>
+
         <motion.p
-          {...enter(0.72)}
+          {...enter(0.76)}
           className="max-w-md text-sm leading-relaxed text-muted"
         >
           You each play your own copy of the movie. Files never leave your
@@ -86,7 +91,7 @@ export function HeroMidnight() {
         </motion.p>
 
         <motion.div
-          {...enter(0.85)}
+          {...enter(0.88)}
           className="mt-2 flex flex-col items-center gap-3 sm:flex-row"
         >
           <motion.div
@@ -115,7 +120,7 @@ export function HeroMidnight() {
         </motion.div>
 
         <motion.ul
-          {...enter(1)}
+          {...enter(1.02)}
           className="mt-8 flex flex-col items-center gap-x-6 gap-y-2 text-xs text-muted sm:flex-row"
         >
           {TRUST.map(({ icon: Icon, label }) => (

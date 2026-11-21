@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LoaderCircle, Plus } from "lucide-react";
 
-import { NodeBadge } from "@/components/node-badge";
 import { CreateRoomError, createRoom } from "@/lib/api";
 import { writeRecoveryCode } from "@/lib/session-store";
 
@@ -52,8 +51,6 @@ export default function LobbyPage() {
           copy of the movie.
         </p>
       </header>
-
-      <NodeBadge label="lobby" />
 
       <div className="flex flex-col gap-3">
         <button

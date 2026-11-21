@@ -5,6 +5,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { ArrowRight, KeyRound, ShieldCheck, Wifi } from "lucide-react";
 
 import { makeEnter } from "@/components/landing/motion";
+import { PereNote } from "@/components/landing/pere-note";
 
 /*
  * HeroMarquee — M6b Variant A, "Crimson Marquee".
@@ -92,6 +93,10 @@ export function HeroMarquee() {
             <p className="mt-5 text-base italic tracking-wide text-soft">
               Two hearts. One screen.
             </p>
+
+            <div className="mt-3">
+              <PereNote />
+            </div>
 
             <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-muted">
               You each play your own copy of the movie. Files never leave your

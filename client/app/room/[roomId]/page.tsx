@@ -8,7 +8,6 @@ import type { Socket } from "socket.io-client";
 import { ChatPanel } from "@/components/chat-panel";
 import { FilePicker } from "@/components/file-picker";
 import { InviteCard } from "@/components/invite-card";
-import { NodeBadge } from "@/components/node-badge";
 import { PartnerPanel } from "@/components/partner-panel";
 import { PlayerControls, formatTime } from "@/components/player-controls";
 import { RecoveryForm } from "@/components/recovery-form";
@@ -433,6 +432,23 @@ export default function WatchRoomPage() {
     setRecoverBusy(false);
   }
 
+  /**
+   * The first secret-join is attempted once per mount (to protect the join
+   * rate limit). If that attempt timed out — a sleeping server is the common
+   * case — this re-arms it without a full page reload.
+   */
+  function handleRetryJoin(): void {
+    const socket = socketRef.current;
+    if (!socket || !captureFor(roomId).secret) return;
+    joinAttemptedRef.current = false;
+    setJoinError(null);
+    setPhase("connecting");
+    if (socket.connected) {
+      socket.disconnect();
+    }
+    socket.connect();
+  }
+
   async function handleReset(): Promise<void> {
     const socket = socketRef.current;
     if (!socket || resetBusy) return;
@@ -561,6 +577,15 @@ export default function WatchRoomPage() {
               below is your way back.
             </p>
           </section>
+          {capture.done && capture.secret ? (
+            <button
+              type="button"
+              onClick={handleRetryJoin}
+              className="inline-flex min-h-11 items-center justify-center self-start rounded-full border border-line px-5 text-sm font-medium text-ink transition-colors hover:bg-elevated"
+            >
+              Try the invite link again
+            </button>
+          ) : null}
           <RecoveryForm
             busy={recoverBusy}
             error={recoverError}
@@ -634,26 +659,26 @@ export default function WatchRoomPage() {
         />
       ) : null}
 
-      <NodeBadge label="watch" />
-      <FilePicker />
-      <PlayerControls
-        onScrub={(position) => engineRef.current?.reportScrub(position)}
-        onScrubStart={() => engineRef.current?.setScrubbing(true)}
-        onScrubEnd={() => engineRef.current?.setScrubbing(false)}
-      />
-
       {phase === "joined" && you ? (
-        <ChatPanel
-          messages={chat}
-          youSlot={you.slot}
-          disabled={!connected}
-          onSend={(text) => {
-            const socket = socketRef.current;
-            if (socket) {
-              sendChat(socket, text);
-            }
-          }}
-        />
+        <>
+          <FilePicker />
+          <PlayerControls
+            onScrub={(position) => engineRef.current?.reportScrub(position)}
+            onScrubStart={() => engineRef.current?.setScrubbing(true)}
+            onScrubEnd={() => engineRef.current?.setScrubbing(false)}
+          />
+          <ChatPanel
+            messages={chat}
+            youSlot={you.slot}
+            disabled={!connected}
+            onSend={(text) => {
+              const socket = socketRef.current;
+              if (socket) {
+                sendChat(socket, text);
+              }
+            }}
+          />
+        </>
       ) : null}
 
       <nav className="flex flex-col gap-3">

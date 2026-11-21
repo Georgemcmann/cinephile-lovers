@@ -18,6 +18,12 @@ const EnvSchema = z
       .transform((url) => new URL(url).origin)
       .default("http://localhost:3000"),
 
+    // Number of trusted reverse-proxy hops in front of the app. Express and
+    // the socket gateway use the same count to resolve the client IP, so
+    // per-IP limits stay meaningful on the deployed host. Pxxl/Render with a
+    // single proxy: 1. Behind an extra CDN hop: 2.
+    TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(1),
+
     // Rooms expire after this many hours WITHOUT activity (joins/events
     // extend the clock). Memory-only server; the sweeper enforces it.
     ROOM_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(12),

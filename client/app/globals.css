@@ -147,44 +147,6 @@
     }
   }
 }
-  @keyframes beam-sway {
-    0%,
-    100% {
-      transform: rotate(-1.1deg);
-    }
-    50% {
-      transform: rotate(1.1deg);
-    }
-  }
-
-  @keyframes rec-pulse {
-    0%,
-    100% {
-      opacity: 1;
-      box-shadow: 0 0 0 0 rgb(240 68 82 / 0.45);
-    }
-    50% {
-      opacity: 0.55;
-      box-shadow: 0 0 0 5px rgb(240 68 82 / 0);
-    }
-  }
-
-  @keyframes marquee {
-    to {
-      transform: translateX(-50%);
-    }
-  }
-
-  @keyframes glow-breathe {
-    0%,
-    100% {
-      filter: drop-shadow(0 0 14px rgb(240 68 82 / 0.28));
-    }
-    50% {
-      filter: drop-shadow(0 0 26px rgb(240 68 82 / 0.5));
-    }
-  }
-
 
 html {
   color-scheme: dark;
@@ -297,21 +259,6 @@ body {
 .resume-overlay__label {
   font-size: 14px;
   font-weight: 600;
-}
-
-/* Milestone test scaffolding: the persistent element's DOM identity chip
-   (used to verify the M2 gate on a real iPhone). Removed at M6 polish. */
-.node-badge {
-  display: inline-block;
-  width: fit-content;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--color-muted);
-  background-color: var(--color-elevated);
-  border: 1px solid var(--color-line);
-  border-radius: 8px;
-  padding: 6px 10px;
 }
 
 /* ---- Player controls ---- */
@@ -513,6 +460,19 @@ body {
     rgb(232 200 128 / 0.9),
     rgb(232 200 128 / 0.12)
   );
+}
+
+/*
+ * iPhone Safari zooms the whole viewport when a focused form control has a
+ * font-size below 16px. Keep controls at 16px on phones (the range input is
+ * exempt) so chat, invite and recovery fields focus without a jump.
+ */
+@media (max-width: 640px) {
+  input:not([type="range"]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
 }
 
 /* Respect the OS-level reduced motion preference: clamp every CSS

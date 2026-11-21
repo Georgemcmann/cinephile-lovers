@@ -8,6 +8,7 @@ import {
 } from "framer-motion";
 import {
   MessagesSquare,
+  Palette,
   ShieldCheck,
   Wifi,
 } from "lucide-react";
@@ -19,17 +20,16 @@ import { HeroVelvet } from "@/components/landing/hero-velvet";
 import { EASE, makeEnter } from "@/components/landing/motion";
 
 /*
- * Landing — Direction B, "The Midnight Screening", now hosting three hero
- * variants behind a small preview switcher:
+ * Landing — Direction B, "The Midnight Screening", with two alternate
+ * hero art directions available for comparison:
  *
  *   midnight — the original: warm projector beam, dust, mask-reveal title
  *   marquee  — "Crimson Marquee": neon sign, flickering tube, amber bulbs
  *   noir     — "Velvet Noir": crimson velvet curtain, serif title, gold
  *
- * The switcher persists to localStorage and honors a `?hero=` query param
- * (midnight | marquee | noir) so a specific variant can be shared or
- * tested on a phone directly. It is a preview tool: delete the block
- * marked HERO SWITCHER once a direction is chosen.
+ * Midnight is the production default. The alternates stay reachable via
+ * `?hero=marquee` / `?hero=noir` for sharing or device testing; there is
+ * deliberately no visible switcher in the shipped UI.
  *
  * Pure presentation — every product behavior (create room, invite link,
  * join) lives in /lobby and the room page. This page links, it does not
@@ -44,15 +44,17 @@ import { EASE, makeEnter } from "@/components/landing/motion";
 
 type HeroVariant = "midnight" | "marquee" | "noir";
 
-const VARIANT_ORDER: HeroVariant[] = ["midnight", "marquee", "noir"];
-
-const VARIANT_LABELS: Record<HeroVariant, string> = {
+const HERO_LABELS: Record<HeroVariant, string> = {
   midnight: "Midnight",
   marquee: "Marquee",
   noir: "Noir",
 };
 
-const STORAGE_KEY = "cl-hero-variant";
+const HERO_SEQUENCE: readonly HeroVariant[] = [
+  "midnight",
+  "marquee",
+  "noir",
+];
 
 const MARQUEE_ITEMS = [
   "NOW SHOWING",
@@ -110,9 +112,8 @@ export default function LandingPage() {
   const [variant, setVariant] = useState<HeroVariant>("midnight");
 
   /*
-   * Resolve the previewed hero: ?hero= wins (shareable/device testing),
-   * then the saved choice, then the default. Effects run client-only, so
-   * the server-rendered page (Midnight) and hydration stay consistent.
+   * ?hero= is a shareable/device-testing override. Effects run client-only,
+   * so the server-rendered page (Midnight) and hydration stay consistent.
    */
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("hero");
@@ -121,27 +122,20 @@ export default function LandingPage() {
       // always uses the default variant so hydration stays consistent.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setVariant(requested);
-      return;
-    }
-    let saved: string | null = null;
-    try {
-      saved = window.localStorage.getItem(STORAGE_KEY);
-    } catch {
-      saved = null;
-    }
-    if (isHeroVariant(saved)) {
-      setVariant(saved);
     }
   }, []);
 
-  const pickVariant = (next: HeroVariant) => {
-    setVariant(next);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      /* private mode — preview still works for this page load */
-    }
-  };
+  function switchHero() {
+    const currentIndex = HERO_SEQUENCE.indexOf(variant);
+    const nextVariant =
+      HERO_SEQUENCE[(currentIndex + 1) % HERO_SEQUENCE.length];
+
+    setVariant(nextVariant);
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("hero", nextVariant);
+    window.history.replaceState({}, "", url);
+  }
 
   /* One-shot entrance helper, shared by header + non-hero sections. */
   const enter = makeEnter(reduceMotion);
@@ -181,9 +175,21 @@ export default function LandingPage() {
           />
           CINEPHILE LOVERS
         </p>
-        <p className="rounded-full border border-line px-3 py-1.5 text-[10px] tracking-[0.28em] text-muted">
-          INVITE ONLY
-        </p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={switchHero}
+            aria-label={`Switch hero style. Current style: ${HERO_LABELS[variant]}`}
+            title="Switch hero style"
+            className="inline-flex min-h-9 items-center gap-2 rounded-full border border-line bg-abyss/70 px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-muted transition-colors hover:border-muted/60 hover:text-ink"
+          >
+            <Palette size={13} aria-hidden="true" className="text-soft" />
+            <span>{HERO_LABELS[variant]}</span>
+          </button>
+          <p className="hidden rounded-full border border-line px-3 py-1.5 text-[10px] tracking-[0.28em] text-muted sm:block">
+            INVITE ONLY
+          </p>
+        </div>
       </motion.header>
 
       {/* ================= HERO (variant) ================= */}
@@ -194,7 +200,7 @@ export default function LandingPage() {
       {/* ================= MARQUEE DIVIDER ================= */}
       <div
         aria-hidden="true"
-        className="relative border-y border-line/60 py-4 [mask-image:linear-gradient(to_right,transparent,black_12%,black_88%,transparent)]"
+        className="relative border-y border-line/60 py-4 mask-[linear-gradient(to_right,transparent,black_12%,black_88%,transparent)]"
       >
         <div className="flex w-max animate-marquee">
           {[0, 1].map((copy) => (
@@ -247,7 +253,7 @@ export default function LandingPage() {
                 >
                   {step.num}
                 </span>
-                <h3 className="mt-4 text-base font-semibold text-ink">
+                <h3 className="mt-4 font-semibold text-ink">
                   {step.title}
                 </h3>
                 <p className="mt-2 text-sm leading-relaxed text-muted">
@@ -279,7 +285,7 @@ export default function LandingPage() {
                 aria-hidden="true"
                 className="text-muted transition-colors duration-300 group-hover:text-soft"
               />
-              <h3 className="mt-4 text-base font-semibold text-ink">
+              <h3 className="mt-4 font-semibold text-ink">
                 {title}
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-muted">{body}</p>
@@ -310,26 +316,6 @@ export default function LandingPage() {
         </motion.p>
       </footer>
 
-      {/* ================= HERO SWITCHER (preview tool) =================
-          Persisted to localStorage; ?hero=midnight|marquee|noir overrides.
-          Delete this whole block once a direction is chosen. */}
-      <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-1 rounded-full border border-line bg-black/75 p-1 backdrop-blur">
-        {VARIANT_ORDER.map((v) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => pickVariant(v)}
-            aria-pressed={variant === v}
-            className={
-              variant === v
-                ? "rounded-full bg-btn-red px-3.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-ink"
-                : "rounded-full px-3.5 py-1.5 text-[10px] uppercase tracking-[0.18em] text-muted transition-colors hover:text-ink"
-            }
-          >
-            {VARIANT_LABELS[v]}
-          </button>
-        ))}
-      </div>
     </main>
   );
 }

@@ -97,6 +97,13 @@ redeploy — `NEXT_PUBLIC_*` values are inlined at build time):
   - `NODE_ENV=production`
   - `FRONTEND_URL=https://<client-domain>` (exact client origin; this is the
     only browser origin the server accepts)
+  - `TRUST_PROXY=1` unless an extra CDN hop sits in front of the app (then `2`);
+    this keeps per-IP rate limits keyed on the real client
+
+The client's Open Graph/Twitter previews derive their absolute URL from the
+request host, so no extra variable is needed. Set `NEXT_PUBLIC_SITE_URL` only
+if you want to pin the canonical origin (for example when the app is reachable
+from more than one domain).
 
 The two projects reference each other's domains, so the first rollout takes
 two passes: deploy each project once to learn its domain, set all four

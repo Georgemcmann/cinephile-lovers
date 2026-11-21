@@ -23,11 +23,28 @@ const createRoomLimiter = new FixedWindowRateLimiter(
   env.ROOM_CREATE_RATE_WINDOW_MIN * 60_000,
 );
 
-// Behind Render's reverse proxy, trust exactly one proxy hop so req.ip is
-// the real client IP for future per-IP rate limits (brief §6). M7 must
-// verify on Render that req.ip shows the client address, not the proxy.
-app.set("trust proxy", 1);
+// Behind the hosting reverse proxy, trust the configured number of hops so
+// req.ip is the real client IP for per-IP rate limits (brief §6). The
+// default (1) matches a single Render/Pxxl proxy; raise it only if a CDN
+// adds another hop in front of the app.
+app.set("trust proxy", env.TRUST_PROXY);
 app.disable("x-powered-by");
+
+// Minimal security headers for the REST surface. Socket.IO frames bypass
+// Express, so these apply to HTTP responses only.
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("X-Frame-Options", "DENY");
+  next();
+});
+
+// API responses are per-room or per-request; never let an intermediary or
+// the browser reuse them.
+app.use("/api", (_req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  next();
+});
 
 // Strict CORS/origin allowlist for REST; Socket.IO gets the same list.
 app.use(originMiddleware(env));

@@ -159,19 +159,22 @@ export type GatewayDeps = {
 };
 
 /**
- * One trusted proxy hop (mirror of Express `trust proxy = 1`): the LAST
- * XFF entry is the client; anything earlier can be forged by upstream
- * proxies we do not control. M7 re-verifies on Render (R8).
+ * Mirror Express `trust proxy = n` for the socket transport: walk back from
+ * the socket peer by `trustHops` XFF entries. With the default of one hop,
+ * the last XFF entry is the client; entries further left are proxy hops we
+ * trust. The count is configurable (TRUST_PROXY) because an extra CDN hop
+ * would otherwise collapse every client onto the same proxy IP.
  */
-function socketIp(socket: Socket): string {
+function socketIp(socket: Socket, trustHops: number): string {
   const forwarded = socket.request.headers["x-forwarded-for"];
   if (typeof forwarded === "string") {
     const hops = forwarded
       .split(",")
       .map((hop) => hop.trim())
       .filter((hop) => hop.length > 0);
-    const last = hops.at(-1);
-    if (last) return last;
+    const index = Math.max(0, hops.length - trustHops);
+    const candidate = trustHops > 0 ? hops[index] : undefined;
+    if (candidate) return candidate;
   }
   return socket.handshake.address ?? "unknown";
 }
@@ -199,6 +202,7 @@ export function attachGateway(
   const { roomStore, membershipStore: membership } = deps;
   const limiters: GatewayLimiters = { ...defaultLimiters(), ...deps.limiters };
   const origins = new Set(allowedOrigins(env));
+  const trustHops = env.TRUST_PROXY;
 
   const io = new SocketIoServer(httpServer, {
     cors: {
@@ -415,7 +419,7 @@ export function attachGateway(
       if (!limiters.joinPerSocket.take(`join:${socket.id}`)) {
         return reply({ ok: false, error: "rate_limited" });
       }
-      if (!limiters.joinPerIp.take(`join:${socketIp(socket)}`)) {
+      if (!limiters.joinPerIp.take(`join:${socketIp(socket, trustHops)}`)) {
         return reply({ ok: false, error: "rate_limited" });
       }
 
@@ -469,7 +473,7 @@ export function attachGateway(
       if (!limiters.recoverPerSocket.take(`recover:${socket.id}`)) {
         return reply({ ok: false, error: "rate_limited" });
       }
-      if (!limiters.recoverPerIp.take(`recover:${socketIp(socket)}`)) {
+      if (!limiters.recoverPerIp.take(`recover:${socketIp(socket, trustHops)}`)) {
         return reply({ ok: false, error: "rate_limited" });
       }
 

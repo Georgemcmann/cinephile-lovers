@@ -5,6 +5,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { ArrowRight, KeyRound, ShieldCheck, Wifi } from "lucide-react";
 
 import { makeEnter } from "@/components/landing/motion";
+import { PereNote } from "@/components/landing/pere-note";
 
 /*
  * HeroVelvet — M6b Variant B, "Velvet Noir".
@@ -98,8 +99,12 @@ export function HeroVelvet() {
           devices — the server only keeps the two of you in sync.
         </motion.p>
 
+        <motion.div {...enter(0.58)} className="mt-5">
+          <PereNote />
+        </motion.div>
+
         <motion.div
-          {...enter(0.65)}
+          {...enter(0.7)}
           className="mt-9 flex flex-col items-start gap-5 sm:flex-row sm:items-center"
         >
           <motion.div
@@ -129,7 +134,7 @@ export function HeroVelvet() {
         </motion.div>
 
         <motion.ul
-          {...enter(0.85)}
+          {...enter(0.9)}
           className="mt-12 flex flex-col items-start gap-x-6 gap-y-2 text-xs text-muted sm:flex-row"
         >
           {TRUST.map(({ icon: Icon, label }) => (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useSyncExternalStore } from "react";
-import { Check, Copy, KeyRound } from "lucide-react";
+import { Check, Copy, KeyRound, Share2 } from "lucide-react";
 
 type InviteCardProps = {
   roomId: string;
@@ -52,11 +52,36 @@ export function InviteCard({
     getEmptyOrigin,
   );
   const link = origin ? `${origin}/room/${roomId}#${inviteSecret}` : "";
+  const canShare = useSyncExternalStore(
+    subscribeToNothing,
+    () => typeof navigator.share === "function",
+    () => false,
+  );
   const [copied, setCopied] = useState(false);
   const [manualHint, setManualHint] = useState(false);
   const linkInputRef = useRef<HTMLInputElement | null>(null);
   const [codeCopied, setCodeCopied] = useState(false);
   const [recoveryDismissed, setRecoveryDismissed] = useState(false);
+
+  async function shareLink(): Promise<void> {
+    if (!link) return;
+    if (!canShare) {
+      await copyLink();
+      return;
+    }
+    try {
+      await navigator.share({
+        title: "Cinephile Lovers",
+        text: "Join me for a private screening.",
+        url: link,
+      });
+    } catch (err) {
+      // A cancelled share sheet is not a failure; anything else falls back
+      // to the clipboard so the invite is never lost.
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      await copyLink();
+    }
+  }
 
   async function copyLink(): Promise<void> {
     if (!navigator.clipboard) {
@@ -105,23 +130,39 @@ export function InviteCard({
           onFocus={(event) => event.currentTarget.select()}
           className="min-w-0 flex-1 rounded-xl border border-line bg-base px-3 py-2 font-mono text-xs text-muted outline-none focus:border-accent"
         />
-        <button
-          type="button"
-          onClick={copyLink}
-          className="inline-flex min-h-11 flex-none items-center justify-center gap-2 rounded-xl bg-btn-red px-5 text-sm font-semibold text-ink transition-colors hover:bg-btn-red-deep"
-        >
-          {copied ? (
-            <>
-              <Check size={16} aria-hidden="true" />
-              Copied
-            </>
-          ) : (
-            <>
-              <Copy size={16} aria-hidden="true" />
-              Copy link
-            </>
-          )}
-        </button>
+        <div className="flex gap-2">
+          {canShare ? (
+            <button
+              type="button"
+              onClick={shareLink}
+              className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-btn-red px-5 text-sm font-semibold text-ink transition-colors hover:bg-btn-red-deep sm:flex-none"
+            >
+              <Share2 size={16} aria-hidden="true" />
+              Share invite
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={copyLink}
+            className={
+              canShare
+                ? "inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-line px-5 text-sm font-semibold text-ink transition-colors hover:bg-elevated sm:flex-none"
+                : "inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-btn-red px-5 text-sm font-semibold text-ink transition-colors hover:bg-btn-red-deep sm:flex-none"
+            }
+          >
+            {copied ? (
+              <>
+                <Check size={16} aria-hidden="true" />
+                Copied
+              </>
+            ) : (
+              <>
+                <Copy size={16} aria-hidden="true" />
+                Copy link
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {manualHint ? (
