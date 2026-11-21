@@ -1,0 +1,10 @@
+version = 1
+
+[build]
+framework = "nextjs"
+packageManager = "npm"
+installCommand = "npm ci --include=dev"
+buildCommand = "npm run build"
+startCommand = "npm start"
+port = 3000
+nodeVersion = "24"

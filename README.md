@@ -14,7 +14,7 @@ Milestones 1–5 are complete: persistent player foundation, local-file playback
 | --- | --- |
 | `client/` | Next.js (App Router) + TypeScript + Tailwind CSS, iPhone-Safari-first |
 | `server/` | Node + Express + TypeScript + Socket.IO + Zod, in-memory state |
-| Infra target | Vercel (client) + Render (server). No database. |
+| Infra target | Vercel (client) + Render (server), or Pxxl (both). No database. |
 
 **Single-instance constraint:** rooms live in one process's memory. The backend cannot scale horizontally, and a deploy or restart ends all rooms. Accepted for MVP; the UI shows a "room has ended" screen.
 
@@ -73,6 +73,35 @@ development mode for this setup.
 
 When the dev servers restart, VS Code drops their forwarded ports; re-add
 `3000` and `4000` in the Ports panel and set them back to Public.
+
+## Deploy on Pxxl
+
+Each app ships its own `pxxl.toml`, so create **two Pxxl projects from this
+repository** (Pxxl's build settings are read from the selected base directory):
+
+| Project | Base directory | Port |
+| --- | --- | --- |
+| Client | `client` | 3000 |
+| Server | `server` | 4000 |
+
+Pxxl injects `PORT` and builds with `npm ci --include=dev`, so TypeScript and
+the Next.js build tools are installed even when `NODE_ENV=production` is set.
+
+Environment variables (set them in each project's **Secrets** tab, then
+redeploy — `NEXT_PUBLIC_*` values are inlined at build time):
+
+- Client project:
+  - `NEXT_PUBLIC_API_URL=https://<server-domain>` (no trailing slash)
+  - `NEXT_PUBLIC_SOCKET_URL=https://<server-domain>`
+- Server project:
+  - `NODE_ENV=production`
+  - `FRONTEND_URL=https://<client-domain>` (exact client origin; this is the
+    only browser origin the server accepts)
+
+The two projects reference each other's domains, so the first rollout takes
+two passes: deploy each project once to learn its domain, set all four
+variables, then redeploy both. Pxxl preview/deploy URLs that differ from the
+configured origins are rejected by the origin allowlist by design.
 
 ## Verification
 
