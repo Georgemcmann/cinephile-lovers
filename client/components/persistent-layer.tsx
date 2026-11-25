@@ -10,7 +10,8 @@ import {
 } from "react";
 import { usePathname } from "next/navigation";
 
-import { isLikelyVideoFile, videoExtension } from "@/lib/video-file";
+import { isLikelyVideoFile, isMkvFile, videoExtension } from "@/lib/video-file";
+import { MkvPreparationError, prepareMkvForPlayback } from "@/lib/mkv-remux";
 
 import { ResumeOverlay } from "./resume-overlay";
 
@@ -30,6 +31,11 @@ import { ResumeOverlay } from "./resume-overlay";
  * - All playback commands (play/pause/seek/mute/fullscreen) go through this
  *   layer; the controls never touch the element directly. One writer today;
  *   the M5 sync engine plugs in at exactly this seam.
+ * - MKV is the exception to the gesture rule's "swap immediately" form:
+ *   browsers cannot open Matroska, so loadLocalFile() starts an async local
+ *   repackaging step (lib/mkv-remux.ts) and swaps the MP4 in once ready.
+ *   Because the gesture has passed by then, play() may need the resume
+ *   overlay tap — never an automatic retry or a hidden await in the gesture.
  * - UI state is derived from element-level events (timeupdate, play, pause,
  *   waiting, volumechange, ...), never from command success — the shape the
  *   sync engine needs (native fullscreen stays in sync, review R1).
@@ -72,6 +78,8 @@ export type PlayerState = {
   /** A play() call was rejected (autoplay policy) — show the tap-to-resume overlay. */
   resumeNeeded: boolean;
   error: string | null;
+  /** MKV repackaging progress (0–1); null when no preparation is running. */
+  progress: number | null;
 };
 
 // --- M5 intent plumbing -----------------------------------------------------
@@ -139,6 +147,7 @@ const INITIAL_STATE: PlayerState = {
   muted: false,
   resumeNeeded: false,
   error: null,
+  progress: null,
 };
 
 function noop(): void {}
@@ -188,6 +197,8 @@ export function PersistentLayer({ children }: { children: React.ReactNode }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
   const fileNameRef = useRef<string | null>(null);
+  // Cancels an in-flight MKV repackaging when a new file is selected.
+  const preparationRef = useRef<AbortController | null>(null);
   const pathname = usePathname();
   const [nodeId, setNodeId] = useState<string | null>(null);
   const [canEnterFullscreen, setCanEnterFullscreen] = useState(false);
@@ -291,7 +302,8 @@ export function PersistentLayer({ children }: { children: React.ReactNode }) {
     };
     const listeners: Array<[string, () => void]> = [
       ["loadedmetadata", () => patch({ status: "ready", duration: el.duration })],
-      ["durationchange", () => patch({ duration: el.duration })],
+      ["durationchange", () =>
+        patch({ duration: Number.isFinite(el.duration) ? el.duration : 0 })],
       ["timeupdate", reportTime],
       ["seeked", () => {
         reportTime();
@@ -345,6 +357,55 @@ export function PersistentLayer({ children }: { children: React.ReactNode }) {
     };
   }, [consumeExpected, patch]);
 
+  /**
+   * MKV cannot be opened by the browser's decoder, so the file is repackaged
+   * into MP4 locally and only then handed to the persistent element. This is
+   * the ONE deliberate exception to "src swap + play() in the same gesture":
+   * the work is async, so playback starts when preparation finishes and the
+   * resume overlay covers the autoplay rejection that may follow.
+   */
+  const startMkvPreparation = useCallback(
+    (file: File, el: HTMLVideoElement, controller: AbortController) => {
+      let lastPercent = -1;
+      void prepareMkvForPlayback(file, {
+        signal: controller.signal,
+        onProgress: (progress) => {
+          if (preparationRef.current !== controller) return;
+          const percent = Math.floor(progress * 100);
+          if (percent === lastPercent) return;
+          lastPercent = percent;
+          patch({ progress });
+        },
+      })
+        .then((blob) => {
+          if (preparationRef.current !== controller) return;
+          preparationRef.current = null;
+          const url = URL.createObjectURL(blob);
+          objectUrlRef.current = url;
+          patch({ progress: null });
+          el.src = url;
+          el.load();
+          attemptPlay(el);
+        })
+        .catch((error: unknown) => {
+          if (preparationRef.current !== controller) return;
+          preparationRef.current = null;
+          if (controller.signal.aborted) return;
+          patch({
+            status: "error",
+            playing: false,
+            buffering: false,
+            progress: null,
+            error:
+              error instanceof MkvPreparationError
+                ? error.message
+                : "The MKV could not be prepared for playback. Convert it to MP4 (H.264 + AAC) with HandBrake or ffmpeg and try again.",
+          });
+        });
+    },
+    [attemptPlay, patch],
+  );
+
   const loadLocalFile = useCallback(
     (file: File) => {
       const el = videoRef.current;
@@ -360,12 +421,15 @@ export function PersistentLayer({ children }: { children: React.ReactNode }) {
 
       fileNameRef.current = file.name;
 
+      // A new selection supersedes any in-flight MKV preparation.
+      preparationRef.current?.abort();
+      preparationRef.current = null;
+
       // The previous movie's blob URL is dead the moment the new src is set.
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
       }
-      const url = URL.createObjectURL(file);
-      objectUrlRef.current = url;
 
       patch({
         status: "loading",
@@ -377,7 +441,24 @@ export function PersistentLayer({ children }: { children: React.ReactNode }) {
         buffering: false,
         currentTime: 0,
         duration: 0,
+        progress: null,
       });
+
+      if (isMkvFile(file)) {
+        // No gesture-time src swap is possible: the element gets its src only
+        // once the local MP4 repackaging finishes.
+        el.pause();
+        el.removeAttribute("src");
+        el.load();
+        patch({ progress: 0 });
+        const controller = new AbortController();
+        preparationRef.current = controller;
+        startMkvPreparation(file, el, controller);
+        return;
+      }
+
+      const url = URL.createObjectURL(file);
+      objectUrlRef.current = url;
 
       // R1 re-priming rule, M2 form: the swap happens inside the picker's
       // gesture, and play() is issued in the same gesture — no awaits, no
@@ -387,7 +468,7 @@ export function PersistentLayer({ children }: { children: React.ReactNode }) {
       el.load();
       attemptPlay(el);
     },
-    [attemptPlay, patch],
+    [attemptPlay, patch, startMkvPreparation],
   );
 
   const togglePlay = useCallback(() => {

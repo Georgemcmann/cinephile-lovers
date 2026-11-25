@@ -68,7 +68,9 @@ export function FilePicker() {
           </p>
           <p className="text-xs text-muted" data-testid="file-status">
             {state.status === "loading"
-              ? "Reading file…"
+              ? state.progress !== null
+                ? `Repackaging MKV for this browser… ${Math.round(state.progress * 100)}%`
+                : "Reading file…"
               : state.status === "ready"
                 ? `${formatBytes(state.fileSize ?? 0)} · ready on this device`
                 : "Not playable"}
@@ -107,8 +109,9 @@ export function FilePicker() {
 
       {!hasFile ? (
         <p className="text-xs leading-relaxed text-muted">
-          Any video file can be selected — playback depends on this browser&apos;s
-          codecs. MP4 (H.264 + AAC) or WebM is the safest; MKV support varies.
+          Any video file can be selected. MKV files are repackaged into MP4 on
+          this device before playback (never uploaded). MP4 (H.264 + AAC) or
+          WebM starts instantly.
         </p>
       ) : null}
     </section>
