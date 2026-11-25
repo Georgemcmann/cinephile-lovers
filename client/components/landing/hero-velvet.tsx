@@ -5,7 +5,6 @@ import { motion, useReducedMotion } from "framer-motion";
 import { ArrowRight, KeyRound, ShieldCheck, Wifi } from "lucide-react";
 
 import { makeEnter } from "@/components/landing/motion";
-import { PereNote } from "@/components/landing/pere-note";
 
 /*
  * HeroVelvet — M6b Variant B, "Velvet Noir".
@@ -98,10 +97,6 @@ export function HeroVelvet() {
           You each play your own copy of the movie. Files never leave your
           devices — the server only keeps the two of you in sync.
         </motion.p>
-
-        <motion.div {...enter(0.58)} className="mt-5">
-          <PereNote />
-        </motion.div>
 
         <motion.div
           {...enter(0.7)}

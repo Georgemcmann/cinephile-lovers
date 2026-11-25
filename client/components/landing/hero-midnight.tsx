@@ -4,7 +4,6 @@ import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { ArrowRight, KeyRound, ShieldCheck, Wifi } from "lucide-react";
 
-import { PereNote } from "@/components/landing/pere-note";
 import { ProjectorBeam } from "@/components/landing/projector-beam";
 import { makeEnter } from "@/components/landing/motion";
 
@@ -77,10 +76,6 @@ export function HeroMidnight() {
         >
           Two hearts. One screen.
         </motion.p>
-
-        <motion.div {...enter(0.68)}>
-          <PereNote />
-        </motion.div>
 
         <motion.p
           {...enter(0.76)}

@@ -10,6 +10,8 @@ import {
 } from "react";
 import { usePathname } from "next/navigation";
 
+import { isLikelyVideoFile, videoExtension } from "@/lib/video-file";
+
 import { ResumeOverlay } from "./resume-overlay";
 
 /**
@@ -170,7 +172,7 @@ const MEDIA_ERROR_TEXT: Record<number, string> = {
   1: "Playback was interrupted. Try playing the file again.",
   2: "The file could not be read. Re-select it and try again.",
   3: "The file is broken or uses codecs this browser cannot decode.",
-  4: "This format cannot be played here. iPhone Safari needs H.264 video + AAC audio in an MP4 container.",
+  4: "This video's container or codecs are not supported by this browser. Try MP4 (H.264 + AAC) or WebM instead.",
 };
 
 const MEDIA_ERROR_FALLBACK =
@@ -185,6 +187,7 @@ function phaseFromPathname(pathname: string | null): Phase {
 export function PersistentLayer({ children }: { children: React.ReactNode }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
+  const fileNameRef = useRef<string | null>(null);
   const pathname = usePathname();
   const [nodeId, setNodeId] = useState<string | null>(null);
   const [canEnterFullscreen, setCanEnterFullscreen] = useState(false);
@@ -312,11 +315,18 @@ export function PersistentLayer({ children }: { children: React.ReactNode }) {
     ];
     const onError = () => {
       const code = el.error?.code ?? 0;
+      const base = MEDIA_ERROR_TEXT[code] ?? MEDIA_ERROR_FALLBACK;
+      const extension = fileNameRef.current
+        ? videoExtension(fileNameRef.current)
+        : null;
       patch({
         status: "error",
         playing: false,
         buffering: false,
-        error: MEDIA_ERROR_TEXT[code] ?? MEDIA_ERROR_FALLBACK,
+        error:
+          code === 4 && extension
+            ? `.${extension} files are not supported by this browser's decoder. ${base}`
+            : base,
       });
     };
 
@@ -340,13 +350,15 @@ export function PersistentLayer({ children }: { children: React.ReactNode }) {
       const el = videoRef.current;
       if (!el) return;
 
-      if (!file.type.startsWith("video/")) {
+      if (!isLikelyVideoFile(file)) {
         patch({
           status: "error",
           error: "That does not look like a video file.",
         });
         return;
       }
+
+      fileNameRef.current = file.name;
 
       // The previous movie's blob URL is dead the moment the new src is set.
       if (objectUrlRef.current) {

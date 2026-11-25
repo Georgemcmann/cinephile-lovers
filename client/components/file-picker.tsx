@@ -3,6 +3,8 @@
 import { useRef } from "react";
 import { Clapperboard, RotateCcw } from "lucide-react";
 
+import { VIDEO_FILE_ACCEPT } from "@/lib/video-file";
+
 import { usePersistentVideo } from "./persistent-layer";
 
 function formatBytes(bytes: number): string {
@@ -43,7 +45,7 @@ export function FilePicker() {
       <input
         ref={inputRef}
         type="file"
-        accept="video/*"
+        accept={VIDEO_FILE_ACCEPT}
         className="sr-only"
         aria-label="Choose a movie file"
         onChange={(event) => {
@@ -105,8 +107,8 @@ export function FilePicker() {
 
       {!hasFile ? (
         <p className="text-xs leading-relaxed text-muted">
-          Tip for iPhones: H.264 video + AAC audio in an MP4 container plays
-          everywhere.
+          Any video file can be selected — playback depends on this browser&apos;s
+          codecs. MP4 (H.264 + AAC) or WebM is the safest; MKV support varies.
         </p>
       ) : null}
     </section>
